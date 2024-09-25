@@ -5,18 +5,15 @@ all: help
 
 # Define a variable for the test file path.
 TEST_FILE ?= tests/unit_tests/
-integration_test integration_tests: TEST_FILE = tests/integration_tests/
 
-# unit tests are run with the --disable-socket flag to prevent network calls
-test tests:
-	poetry run pytest --disable-socket --allow-unix-socket $(TEST_FILE)
+integration_test integration_tests: TEST_FILE=tests/integration_tests/
+
+test tests integration_test integration_tests:
+	poetry run pytest $(TEST_FILE)
 
 test_watch:
 	poetry run ptw --snapshot-update --now . -- -vv $(TEST_FILE)
 
-# integration tests are run without the --disable-socket flag to allow network calls
-integration_test integration_tests:
-	poetry run pytest $(TEST_FILE)
 
 ######################
 # LINTING AND FORMATTING
@@ -32,13 +29,13 @@ lint_tests: PYTHON_FILES=tests
 lint_tests: MYPY_CACHE=.mypy_cache_test
 
 lint lint_diff lint_package lint_tests:
-	[ "$(PYTHON_FILES)" = "" ] || poetry run ruff $(PYTHON_FILES)
+	[ "$(PYTHON_FILES)" = "" ] || poetry run ruff check $(PYTHON_FILES)
 	[ "$(PYTHON_FILES)" = "" ] || poetry run ruff format $(PYTHON_FILES) --diff
 	[ "$(PYTHON_FILES)" = "" ] || mkdir -p $(MYPY_CACHE) && poetry run mypy $(PYTHON_FILES) --cache-dir $(MYPY_CACHE)
 
 format format_diff:
 	[ "$(PYTHON_FILES)" = "" ] || poetry run ruff format $(PYTHON_FILES)
-	[ "$(PYTHON_FILES)" = "" ] || poetry run ruff --select I --fix $(PYTHON_FILES)
+	[ "$(PYTHON_FILES)" = "" ] || poetry run ruff check --select I --fix $(PYTHON_FILES)
 
 spell_check:
 	poetry run codespell --toml pyproject.toml
