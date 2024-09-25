@@ -1,8 +1,8 @@
-# 🦜️🔗 LangChain {partner}
+# 🦜️🔗 LangChain Snowflake
 
-This repository contains 1 package with {partner} integrations with LangChain:
+This repository contains 1 package with Snowflake integrations with LangChain:
 
-- [langchain-{package_lower}](https://pypi.org/project/langchain-{package_lower}/)
+- [langchain-snowflake](https://pypi.org/project/langchain-snowflake/)
 
 ## Initial Repo Checklist (Remove this section after completing)
 
@@ -46,5 +46,5 @@ Slack
 - [ ] Set up release alerting in Slack (ask Erick for help)
 
 release:
-/github subscribe langchain-ai/langchain-{partner_lower} releases workflows:{name:"release"}
-/github unsubscribe langchain-ai/langchain-{partner_lower} issues pulls commits deployments
+/github subscribe langchain-ai/langchain-snowflake releases workflows:{name:"release"}
+/github unsubscribe langchain-ai/langchain-snowflake issues pulls commits deployments
