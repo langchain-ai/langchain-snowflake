@@ -13,7 +13,6 @@ export SNOWFLAKE_PASSWORD=<snowflake_password>
 export SNOWFLAKE_DATABASE=<snowflake_database>
 export SNOWFLAKE_SCHEMA=<snowflake_schema>
 export SNOWFLAKE_ROLE=<snowflake_role>
-export SNOWFLAKE_CORTEX_SEARCH_SERVICE=<cortex_search_service>
 """
 
 import os
