@@ -78,9 +78,9 @@ class CortexSearchRetriever(BaseRetriever):
     Instantiate:
         .. code-block:: python
 
-            from langchain-snowflake import SnowflakeRetriever
+            from langchain-snowflake import CortexSearchRetriever
 
-            retriever = SnowflakeRetriever(
+            retriever = CortexSearchRetriever(
                 authenticator="externalbrowser",
                 columns=["name", "description", "era"],
                 search_column="description",
