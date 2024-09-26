@@ -27,7 +27,7 @@ You can authenticate by one of the following ways:
 Any of these paramaters can also be passed directly into the `CortexSearchRetriever` constructor. Those not passed will be inferred from the environment. For instance:
 
 ```python
-from langchain_snowflake.search_retriever import CortexSearchRetriever
+from langchain_snowflake import CortexSearchRetriever
 
 search = CortexSearchRetriever(
         role="snowflake_role",
@@ -45,7 +45,7 @@ If the `SNOWFLAKE_AUTHENTICATOR` environment variable or `authenticator` propert
 2. Alternatively, you can pass in a `snowflake.snowpark.Session` directly into the constructor. See [the Snowflake docs](https://docs.snowflake.com/en/developer-guide/snowpark/python/creating-session) on how to create such a session.
 
 ```python
-from langchain_snowflake.search_retriever import CortexSearchRetriever
+from langchain_snowflake import CortexSearchRetriever
 from snowflake.snowpark import Session
 
 # Create a snowflake session
@@ -58,14 +58,14 @@ search = CortexSearchRetriever(
 )
 ```
 
-## Search Retriever
+## Cortex Search Retriever
 
 `CortexSearchRetriever` is a Third Party Retriever that allows users to utilize their Cortex Search Service within Langchain.
 
 Given the service name and columns to search, the retriever will return matches found within the dataset with which the Cortex Search Service is associated.
 
 ```python
-from langchain_snowflake.search_retriever import CortexSearchRetriever
+from langchain_snowflake import CortexSearchRetriever
 
 search = CortexSearchRetriever(
         service="your_cortex_search_service_name",
