@@ -190,19 +190,16 @@ class CortexSearchRetriever(BaseRetriever):
         """Validate the environment needed to establish a Snowflake session or obtain
         an API root from a provided Snowflake session."""
 
-        values["database"] = get_from_dict_or_env(
-            values, "database", "SNOWFLAKE_DATABASE"
-        )
-        values["schema"] = get_from_dict_or_env(values, "schema", "SNOWFLAKE_SCHEMA")
-
         if "sp_session" not in values or values["sp_session"] is None:
-            values["username"] = get_from_dict_or_env(
-                values, "username", "SNOWFLAKE_USERNAME"
-            )
-            values["account"] = get_from_dict_or_env(
-                values, "account", "SNOWFLAKE_ACCOUNT"
-            )
-            values["role"] = get_from_dict_or_env(values, "role", "SNOWFLAKE_ROLE")
+            for param, env_var in [
+                ("username", "SNOWFLAKE_USERNAME"),
+                ("account", "SNOWFLAKE_ACCOUNT"),
+                ("role", "SNOWFLAKE_ROLE"),
+                ("database", "SNOWFLAKE_DATABASE"),
+                ("schema", "SNOWFLAKE_SCHEMA"),
+            ]:
+                if param not in values and env_var_is_set(env_var):
+                    values[param] = get_from_dict_or_env(values, param, env_var)
 
             # check whether to authenticate with password or authenticator
             if "password" in values or env_var_is_set("SNOWFLAKE_PASSWORD"):
@@ -263,20 +260,30 @@ class CortexSearchRetriever(BaseRetriever):
                         f"password, account, role, authenticator)."
                     )
 
-            # If overridable parameters are not provided, use the value from the session
-            for param, method in [
-                ("database", "get_current_database"),
-                ("schema", "get_current_schema"),
+            # Set the overridable session parameters.
+            for param, env_var, method in [
+                ("database", "SNOWFLAKE_DATABASE", "get_current_database"),
+                ("schema", "SNOWFLAKE_SCHEMA", "get_current_schema"),
             ]:
-                if param not in values:
-                    session_value = getattr(values["sp_session"], method)()
-                    if session_value is None:
-                        raise CortexSearchRetrieverError(
-                            f"Snowflake {param} not set on the provided session. Pass "
-                            f"the {param} as an argument, set it as an environment "
-                            f"variable, or provide it in your session configuration."
-                        )
-                    values[param] = session_value
+                # Try to get the param as an env var if it's not in the kwargs.
+                if param in values:
+                    continue
+
+                if env_var_is_set(env_var):
+                    values[param] = get_from_dict_or_env(values, param, env_var)
+                    continue
+
+                # If we're still missing the param, try to get it from the
+                # session. Error out at this point since we couldn't find it
+                # anywhere.
+                session_value = getattr(values["sp_session"], method)()
+                if session_value is None:
+                    raise CortexSearchRetrieverError(
+                        f"Snowflake {param} not set on the provided session. Pass "
+                        f"the {param} as an argument, set it as an environment "
+                        f"variable, or provide it in your session configuration."
+                    )
+                values[param] = session_value
 
         return values
 
