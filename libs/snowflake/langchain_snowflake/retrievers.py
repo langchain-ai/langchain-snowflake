@@ -256,10 +256,11 @@ class CortexSearchRetriever(BaseRetriever):
             ]:
                 if param in values:
                     raise CortexSearchRetrieverError(
-                        f"Provided both a Snowflake session and a {param}. If a "
-                        f"Snowflake session is provided, do not provide any other "
-                        f"authentication parameters (username, password, account, "
-                        f"role, authenticator)."
+                        f"Provided both a Snowflake session and a"
+                        f"{'n' if param in ['account', 'authenticator'] else ''} "
+                        f"`{param}`. If a Snowflake session is provided, do not "
+                        f"provide any other authentication parameters (username, "
+                        f"password, account, role, authenticator)."
                     )
 
             # If overridable parameters are not provided, use the value from the session

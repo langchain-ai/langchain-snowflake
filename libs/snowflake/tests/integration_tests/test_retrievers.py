@@ -244,7 +244,6 @@ def test_snowflake_cortex_search_session_auth_validation_error() -> None:
         "columns": columns,
         "search_column": search_column,
         "limit": 10,
-        "authenticator": "externalbrowser",
     }
 
     session_config = {
@@ -258,7 +257,7 @@ def test_snowflake_cortex_search_session_auth_validation_error() -> None:
 
     session = Session.builder.configs(session_config).create()
 
-    for param in ["account", "user", "password", "role"]:
+    for param in ["account", "user", "password", "role", "authenticator"]:
         with pytest.raises(CortexSearchRetrieverError):
             kwargs[param] = "fake_value"
             CortexSearchRetriever(
@@ -278,7 +277,6 @@ def test_snowflake_cortex_search_session_auth_overrides() -> None:
         "columns": columns,
         "search_column": search_column,
         "limit": 10,
-        "authenticator": "externalbrowser",
     }
 
     session_config = {
