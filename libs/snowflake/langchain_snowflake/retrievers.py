@@ -127,7 +127,7 @@ class CortexSearchRetriever(BaseRetriever):
 
     """  # noqa: E501
 
-    sp_session: Optional[Session] = Field(alias="sp_session")
+    sp_session: Session = Field(alias="sp_session")
     """Snowpark session object."""
 
     _sp_root: Root
@@ -191,11 +191,9 @@ class CortexSearchRetriever(BaseRetriever):
         values["database"] = get_from_dict_or_env(
             values, "database", "SNOWFLAKE_DATABASE"
         )
-        values["schema"] = get_from_dict_or_env(
-            values, "schema", "SNOWFLAKE_SCHEMA"
-        )
+        values["schema"] = get_from_dict_or_env(values, "schema", "SNOWFLAKE_SCHEMA")
 
-        if "sp_session" not in values:
+        if "sp_session" not in values or values["sp_session"] is None:
             values["username"] = get_from_dict_or_env(
                 values, "username", "SNOWFLAKE_USERNAME"
             )
@@ -266,7 +264,7 @@ class CortexSearchRetriever(BaseRetriever):
             # If overridable parameters are not provided, use the value from the session
             for param, method in [
                 ("database", "get_current_database"),
-                ("schema", "get_current_schema")
+                ("schema", "get_current_schema"),
             ]:
                 if param not in values:
                     session_value = getattr(values["sp_session"], method)()
@@ -290,24 +288,24 @@ class CortexSearchRetriever(BaseRetriever):
         return [self.search_column] + override_cols
 
     @property
-    def database(self) -> str:
+    def _database(self) -> str:
         """The Snowflake database containing the Cortex Search Service."""
         if self.snowflake_database is not None:
             return self.snowflake_database
         database = self.sp_session.get_current_database()
         if database is None:
             raise CortexSearchRetrieverError("Snowflake database not set on session")
-        return database
+        return str(database)
 
     @property
-    def schema(self) -> str:
+    def _schema(self) -> str:
         """The Snowflake schema containing the Cortex Search Service."""
         if self.snowflake_schema is not None:
             return self.snowflake_schema
         schema = self.sp_session.get_current_schema()
         if schema is None:
             raise CortexSearchRetrieverError("Snowflake schema not set on session")
-        return schema
+        return str(schema)
 
     @property
     def _default_params(self) -> Dict[str, Any]:
@@ -332,11 +330,10 @@ class CortexSearchRetriever(BaseRetriever):
         run_manager: CallbackManagerForRetrieverRun,
         **kwargs: Any,
     ) -> List[Document]:
-
         try:
             response = (
-                self._sp_root.databases[self.database]
-                .schemas[self.schema]
+                self._sp_root.databases[self._database]
+                .schemas[self._schema]
                 .cortex_search_services[self.cortex_search_service]
                 .search(
                     query=str(query),

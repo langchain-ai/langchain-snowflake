@@ -16,12 +16,14 @@ export SNOWFLAKE_ROLE=<snowflake_role>
 """
 
 import os
+from typing import List
 from unittest import mock
 
 import pytest
 from langchain_core.documents import Document
 from pydantic import ValidationError
 from snowflake.snowpark import Session
+
 from langchain_snowflake import CortexSearchRetriever, CortexSearchRetrieverError
 
 
@@ -234,7 +236,7 @@ def test_snowflake_cortex_search_session_auth() -> None:
 
 @pytest.mark.requires("snowflake.core")
 def test_snowflake_cortex_search_session_auth_validation_error() -> None:
-    """Test validation errors when both a `snowlfake.snowpark.Session object` and 
+    """Test validation errors when both a `snowlfake.snowpark.Session object` and
     another authentication paramter are provided."""
 
     columns = ["name", "description", "era", "diet"]
@@ -260,9 +262,7 @@ def test_snowflake_cortex_search_session_auth_validation_error() -> None:
     for param in ["account", "user", "password", "role", "authenticator"]:
         with pytest.raises(CortexSearchRetrieverError):
             kwargs[param] = "fake_value"
-            CortexSearchRetriever(
-                sp_session=session, **kwargs
-            )
+            CortexSearchRetriever(sp_session=session, **kwargs)
             del kwargs[param]
 
 
@@ -290,7 +290,7 @@ def test_snowflake_cortex_search_session_auth_overrides() -> None:
 
     for param in ["database", "schema"]:
         session_config_copy = session_config.copy()
-        session_config_copy[param] = None
+        del session_config_copy[param]
         session = Session.builder.configs(session_config_copy).create()
 
         retriever = CortexSearchRetriever(sp_session=session, **kwargs)
@@ -327,7 +327,7 @@ def test_snowflake_cortex_search_constructor_externalbrowser_authenticator() -> 
     check_documents(documents, columns, search_column)
 
 
-def check_document(doc, columns, search_column) -> None:
+def check_document(doc: Document, columns: List[str], search_column: str) -> None:
     """Check the document returned by the retriever."""
     assert isinstance(doc, Document)
     assert doc.page_content
@@ -337,7 +337,9 @@ def check_document(doc, columns, search_column) -> None:
         assert column in doc.metadata
 
 
-def check_documents(documents, columns, search_column) -> None:
+def check_documents(
+    documents: List[Document], columns: List[str], search_column: str
+) -> None:
     """Check the documents returned by the retriever."""
     for doc in documents:
         check_document(doc, columns, search_column)
