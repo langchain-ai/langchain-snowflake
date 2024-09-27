@@ -73,6 +73,8 @@ class CortexSearchRetriever(BaseRetriever):
             Snowflake schema.
         snowflake_role: str
             Snowflake role.
+        sp_session: snowflake.snowpark.Session
+            Snowpark session object. Provided optionally or created from the above.
 
 
     Instantiate:

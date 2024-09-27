@@ -33,7 +33,7 @@ search = CortexSearchRetriever(
         role="snowflake_role",
         database="your_db",
         schema="your_schema",
-        service="your_cortex_search_service_name",
+        search_service="your_cortex_search_service_name",
         search_column="search_column_name",
 )
 ```
@@ -42,7 +42,9 @@ Here, `role`, `database`, and `schema` are passed directly, while `SNOWFLAKE_USE
 
 If the `SNOWFLAKE_AUTHENTICATOR` environment variable or `authenticator` property is set to `externalbrowser`, the `SNOWFLAKE_PASSWORD`/`password` need not be provided. `externalbrowser` auth will prompt to log in through an browser popup instead.
 
-2. Alternatively, you can pass in a `snowflake.snowpark.Session` directly into the constructor. See [the Snowflake docs](https://docs.snowflake.com/en/developer-guide/snowpark/python/creating-session) on how to create such a session.
+2. Alternatively, you can pass in a `snowflake.snowpark.Session` directly into the constructor with the `sp_session` argument. See [the Snowflake docs](https://docs.snowflake.com/en/developer-guide/snowpark/python/creating-session) on how to create such a session.
+
+You may also override the database or schema on the provided session by passing these additional key word arguments into the constructor.
 
 ```python
 from langchain_snowflake import CortexSearchRetriever
@@ -52,9 +54,17 @@ from snowflake.snowpark import Session
 snowflake_session = Session.builder.config(...).create()
 
 search = CortexSearchRetriever(
-        session=snowflake_session,
-        service="your_cortex_search_service_name",
+        sp_session=snowflake_session,
+        search_service="your_cortex_search_service_name",
         search_column="search_column_name",
+        columns=["col1", "col2", "col3"],
+
+        # If for any reason `snowflake_session` has a different
+        # database than the one containing your cortex search service,
+        # you can override with key word arguments.
+
+        # database="your_database_override",
+        # database="your_database_override"
 )
 ```
 
@@ -68,7 +78,7 @@ Given the service name and columns to search, the retriever will return matches 
 from langchain_snowflake import CortexSearchRetriever
 
 search = CortexSearchRetriever(
-        service="your_cortex_search_service_name",
+        search_service="your_cortex_search_service_name",
         search_column="<search_column_name>",
         columns=["<col1>", "<col2>"],
         filter={"@eq": {"<column>": "<value>"}},
@@ -82,7 +92,7 @@ for doc in result:
 ```
 
 The class requires the arguments below:
-`service` corresponds to the name of your Cortex Search Service.
+`search_service` corresponds to the name of your Cortex Search Service.
 
 `search_column` is the search column of the Cortex Search Service.
 
