@@ -127,7 +127,7 @@ class CortexSearchRetriever(BaseRetriever):
 
     """  # noqa: E501
 
-    sp_session: Optional[Session] = Field(alias="sp_session")
+    sp_session: Session = Field(alias="sp_session")
     """Snowpark session object."""
 
     _sp_root: Root
@@ -188,18 +188,17 @@ class CortexSearchRetriever(BaseRetriever):
         """Validate the environment needed to establish a Snowflake session or obtain
         an API root from a provided Snowflake session."""
 
-        if "sp_session" not in values:
+        values["database"] = get_from_dict_or_env(
+            values, "database", "SNOWFLAKE_DATABASE"
+        )
+        values["schema"] = get_from_dict_or_env(values, "schema", "SNOWFLAKE_SCHEMA")
+
+        if "sp_session" not in values or values["sp_session"] is None:
             values["username"] = get_from_dict_or_env(
                 values, "username", "SNOWFLAKE_USERNAME"
             )
             values["account"] = get_from_dict_or_env(
                 values, "account", "SNOWFLAKE_ACCOUNT"
-            )
-            values["database"] = get_from_dict_or_env(
-                values, "database", "SNOWFLAKE_DATABASE"
-            )
-            values["schema"] = get_from_dict_or_env(
-                values, "schema", "SNOWFLAKE_SCHEMA"
             )
             values["role"] = get_from_dict_or_env(values, "role", "SNOWFLAKE_ROLE")
 
@@ -243,6 +242,40 @@ class CortexSearchRetriever(BaseRetriever):
             except Exception as e:
                 raise CortexSearchRetrieverError(f"Failed to create session: {e}")
 
+        else:
+            # If a session is provided, make sure other authentication parameters
+            # are not provided.
+            for param in [
+                "username",
+                "password",
+                "account",
+                "role",
+                "authenticator",
+            ]:
+                if param in values:
+                    raise CortexSearchRetrieverError(
+                        f"Provided both a Snowflake session and a"
+                        f"{'n' if param in ['account', 'authenticator'] else ''} "
+                        f"`{param}`. If a Snowflake session is provided, do not "
+                        f"provide any other authentication parameters (username, "
+                        f"password, account, role, authenticator)."
+                    )
+
+            # If overridable parameters are not provided, use the value from the session
+            for param, method in [
+                ("database", "get_current_database"),
+                ("schema", "get_current_schema"),
+            ]:
+                if param not in values:
+                    session_value = getattr(values["sp_session"], method)()
+                    if session_value is None:
+                        raise CortexSearchRetrieverError(
+                            f"Snowflake {param} not set on the provided session. Pass "
+                            f"the {param} as an argument, set it as an environment "
+                            f"variable, or provide it in your session configuration."
+                        )
+                    values[param] = session_value
+
         return values
 
     def __init__(self, **kwargs: Any) -> None:
@@ -253,6 +286,26 @@ class CortexSearchRetriever(BaseRetriever):
         """The columns to return in the search results."""
         override_cols = cols if cols else self.columns
         return [self.search_column] + override_cols
+
+    @property
+    def _database(self) -> str:
+        """The Snowflake database containing the Cortex Search Service."""
+        if self.snowflake_database is not None:
+            return self.snowflake_database
+        database = self.sp_session.get_current_database()
+        if database is None:
+            raise CortexSearchRetrieverError("Snowflake database not set on session")
+        return str(database)
+
+    @property
+    def _schema(self) -> str:
+        """The Snowflake schema containing the Cortex Search Service."""
+        if self.snowflake_schema is not None:
+            return self.snowflake_schema
+        schema = self.sp_session.get_current_schema()
+        if schema is None:
+            raise CortexSearchRetrieverError("Snowflake schema not set on session")
+        return str(schema)
 
     @property
     def _default_params(self) -> Dict[str, Any]:
@@ -279,8 +332,8 @@ class CortexSearchRetriever(BaseRetriever):
     ) -> List[Document]:
         try:
             response = (
-                self._sp_root.databases[self.snowflake_database]
-                .schemas[self.snowflake_schema]
+                self._sp_root.databases[self._database]
+                .schemas[self._schema]
                 .cortex_search_services[self.cortex_search_service]
                 .search(
                     query=str(query),
