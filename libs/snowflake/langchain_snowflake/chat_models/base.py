@@ -1,0 +1,680 @@
+"""Core ChatSnowflake class implementation."""
+
+import asyncio
+import json
+import logging
+from typing import Any, Dict, List, Optional
+
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from pydantic import Field, SecretStr
+from snowflake.snowpark import Session
+
+from .._error_handling import SnowflakeErrorHandler
+from .auth import SnowflakeAuth
+from .streaming import SnowflakeStreaming
+from .structured_output import SnowflakeStructuredOutput
+from .tools import SnowflakeTools
+from .utils import SnowflakeUtils
+
+logger = logging.getLogger(__name__)
+
+
+class ChatSnowflake(
+    SnowflakeAuth,
+    SnowflakeStreaming,
+    SnowflakeTools,
+    SnowflakeStructuredOutput,
+    SnowflakeUtils,
+    BaseChatModel,
+):
+    """Snowflake chat model integration using Cortex LLM functions.
+
+    This class provides access to Snowflake's Cortex Complete function with
+    models like llama3.1-70b, mistral-large2, claude-3-5-sonnet, and more.
+
+    Setup:
+        Install ``langchain-snowflake`` and configure Snowflake connection.
+
+        .. code-block:: bash
+
+            pip install -U langchain-snowflake
+
+    Key init args — completion params:
+        model: str
+            Name of Snowflake Cortex model to use (e.g., 'llama3.1-70b', 'mistral-large2')
+        temperature: float
+            Sampling temperature (0.0 to 1.0)
+        max_tokens: Optional[int]
+            Max number of tokens to generate (default: 4096)
+
+    Key init args — client params:
+        session: Optional[Session]
+            Active Snowflake session. If not provided, will create from connection params.
+        account: Optional[str]
+            Snowflake account identifier
+        user: Optional[str]
+            Snowflake username
+        password: Optional[SecretStr]
+            Snowflake password
+        warehouse: Optional[str]
+            Snowflake warehouse to use
+        database: Optional[str]
+            Snowflake database to use
+        schema: Optional[str]
+            Snowflake schema to use
+        request_timeout: int
+            Request timeout in seconds for API calls (default: 300)
+        verify_ssl: bool
+            Whether to verify SSL certificates (default: True)
+
+    Instantiate:
+        .. code-block:: python
+
+            from .. import ChatSnowflake
+
+            # Using existing session
+            llm = ChatSnowflake(
+                model="llama3.1-70b",
+                session=session,
+                temperature=0.1,
+                max_tokens=1000
+            )
+
+            # Using connection parameters with network configuration
+            llm = ChatSnowflake(
+                model="mistral-large2",
+                account="your-account",
+                user="your-user",
+                password="your-password",
+                warehouse="your-warehouse",
+                temperature=0.0,
+                request_timeout=600,  # 10 minutes for long-running operations
+                verify_ssl=True       # Always verify SSL in production
+            )
+
+    Invoke:
+        .. code-block:: python
+
+            messages = [
+                ("system", "You are a helpful assistant."),
+                ("human", "What is the capital of France?"),
+            ]
+            response = llm.invoke(messages)
+            print(response.content)
+
+    Stream:
+        .. code-block:: python
+
+            for chunk in llm.stream(messages):
+                print(chunk.content, end="", flush=True)
+
+    Async:
+        .. code-block:: python
+
+            response = await llm.ainvoke(messages)
+            async for chunk in llm.astream(messages):
+                print(chunk.content, end="", flush=True)
+
+    Tool calling:
+        .. code-block:: python
+
+            from langchain_core.tools import tool
+
+            @tool
+            def get_weather(city: str) -> str:
+                '''Get weather for a city.'''
+                return f"The weather in {city} is 72°F and sunny."
+
+            llm_with_tools = llm.bind_tools([get_weather])
+            messages = [("human", "What's the weather in Paris?")]
+            response = llm_with_tools.invoke(messages)
+
+    Structured output:
+        .. code-block:: python
+
+            from typing import Literal
+            from pydantic import BaseModel
+
+            class Sentiment(BaseModel):
+                sentiment: Literal["positive", "negative", "neutral"]
+                confidence: float
+
+            structured_llm = llm.with_structured_output(Sentiment)
+            result = structured_llm.invoke("I love this product!")
+            print(result.sentiment, result.confidence)
+
+    Response metadata:
+        .. code-block:: python
+
+            response = llm.invoke(messages)
+            print(response.response_metadata)
+            # {'model': 'llama3.1-70b', 'usage': {'prompt_tokens': 10, 'completion_tokens': 5}}
+    """
+
+    # Model configuration
+    model: str = Field(default="llama3.1-70b")
+    """Name of Snowflake Cortex model to use."""
+
+    temperature: float = Field(default=0.7, ge=0.0, le=1.0)
+    """Sampling temperature (0.0 to 1.0)."""
+
+    max_tokens: int = Field(default=4096, ge=1)
+    """Maximum number of tokens to generate."""
+
+    top_p: float = Field(default=1.0, ge=0.0, le=1.0)
+    """Nucleus sampling parameter."""
+
+    # Session and connection
+    session: Optional[Session] = Field(default=None)
+    """Active Snowflake session."""
+
+    warehouse: Optional[str] = Field(default=None)
+    """Snowflake warehouse to use."""
+
+    database: Optional[str] = Field(default=None)
+    """Snowflake database to use."""
+
+    schema: Optional[str] = Field(default=None)
+    """Snowflake schema to use."""
+
+    # Authentication
+    account: Optional[str] = Field(default=None)
+    """Snowflake account identifier."""
+
+    user: Optional[str] = Field(default=None)
+    """Snowflake username."""
+
+    password: Optional[SecretStr] = Field(default=None)
+    """Snowflake password."""
+
+    token: Optional[str] = Field(default=None)
+    """Snowflake Personal Access Token (PAT) - preferred for REST API authentication."""
+
+    private_key_path: Optional[str] = Field(default=None)
+    """Path to RSA private key file for key pair authentication - alternative for REST API."""
+
+    private_key_passphrase: Optional[str] = Field(default=None)
+    """Passphrase for RSA private key."""
+
+    # Retry configuration
+    max_retries: int = Field(default=3)
+    """Maximum number of retries for API calls."""
+
+    # Network configuration
+    request_timeout: int = Field(default=300)
+    """Request timeout in seconds for API calls. Increased from 60s to 300s for complex operations."""
+
+    verify_ssl: bool = Field(default=True)
+    """Whether to verify SSL certificates for HTTPS requests. Set to False only for testing environments."""
+
+    # LangChain compatibility fields
+    ls_structured_output_format: Optional[str] = Field(default=None)
+    """Structured output format for LangChain compatibility."""
+
+    # Class properties for LangChain compatibility
+    _llm_type: str = "snowflake-cortex"
+
+    @property
+    def _ls_structured_output_format(self) -> Optional[str]:
+        """Return the structured output format for LangChain compatibility."""
+        return self.ls_structured_output_format
+
+    @_ls_structured_output_format.setter
+    def _ls_structured_output_format(self, value: Optional[str]) -> None:
+        """Set the structured output format for LangChain compatibility."""
+        self.ls_structured_output_format = value
+
+    def __init__(
+        self,
+        model: str = "llama3.1-70b",
+        session: Any = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+        top_p: float = 1.0,
+        warehouse: Optional[str] = None,
+        database: Optional[str] = None,
+        schema: Optional[str] = None,
+        account: Optional[str] = None,
+        user: Optional[str] = None,
+        password: Optional[SecretStr] = None,
+        token: Optional[str] = None,
+        private_key_path: Optional[str] = None,
+        private_key_passphrase: Optional[str] = None,
+        request_timeout: int = 300,
+        verify_ssl: bool = True,
+        **kwargs: Any,
+    ):
+        super().__init__(**kwargs)
+        self.model = model
+        self.session = session
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.top_p = top_p
+        self.warehouse = warehouse
+        self.database = database
+        self.schema = schema
+        self.account = account
+        self.user = user
+        self.password = password
+        self.token = token
+        self.private_key_path = private_key_path
+        self.private_key_passphrase = private_key_passphrase
+        self.request_timeout = request_timeout
+        self.verify_ssl = verify_ssl
+
+        # Tool-related attributes for bind_tools compatibility
+        self._bound_tools: List[Dict[str, Any]] = []
+        self._tool_choice: Optional[str] = None
+        self._use_rest_api: bool = False  # New attribute to control REST API usage
+
+    @property
+    def _identifying_params(self) -> Dict[str, Any]:
+        """Return identifying parameters."""
+        return {
+            "model": self.model,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "top_p": self.top_p,
+        }
+
+    @property
+    def _llm_type(self) -> str:
+        """Return type of chat model."""
+        return "snowflake-cortex"
+
+    def _generate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Generate a chat response using either REST API (for tools) or SQL function (for basic chat)."""
+        try:
+            # Route based on tool usage
+            if self._should_use_rest_api():
+                return self._generate_via_rest_api(
+                    messages, stop, run_manager, **kwargs
+                )
+            else:
+                return self._generate_via_sql(messages, stop, run_manager, **kwargs)
+        except Exception as e:
+            input_tokens = self._estimate_tokens(messages)
+            return SnowflakeErrorHandler.create_chat_error_result(
+                error=e,
+                operation="generate response",
+                model=self.model,
+                input_tokens=input_tokens,
+                logger_instance=logger,
+            )
+
+    def _generate_via_sql(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Generate response using SQL function SNOWFLAKE.CORTEX.COMPLETE (existing implementation)."""
+        import json
+
+        from langchain_core.messages import AIMessage
+        from langchain_core.outputs import ChatGeneration
+
+        session = self._get_session()
+
+        # Format messages for Cortex
+        formatted_prompt = self._format_messages_for_cortex(messages)
+
+        # Build options (without tools since SQL doesn't support them)
+        options = self._build_cortex_options_for_sql()
+
+        try:
+            if options:
+                # Use array format with options - Fix JSON escaping issue
+                prompt_data = (
+                    formatted_prompt
+                    if isinstance(formatted_prompt, list)
+                    else [{"role": "user", "content": formatted_prompt}]
+                )
+
+                # Use parameterized queries to avoid JSON escaping issues entirely
+                sql = """SELECT SNOWFLAKE.CORTEX.COMPLETE(?, PARSE_JSON(?), PARSE_JSON(?)) as response"""
+                result = session.sql(
+                    sql,
+                    params=[self.model, json.dumps(prompt_data), json.dumps(options)],
+                ).collect()
+            else:
+                # Use simple string format with proper escaping
+                if isinstance(formatted_prompt, str):
+                    # Use parameterized query for simple format too
+                    sql = "SELECT SNOWFLAKE.CORTEX.COMPLETE(?, ?) as response"
+                    result = session.sql(
+                        sql, params=[self.model, formatted_prompt]
+                    ).collect()
+                else:
+                    # Convert to string for simple format
+                    prompt_text = " ".join(
+                        [
+                            msg.get("content", "")
+                            for msg in formatted_prompt
+                            if isinstance(msg, dict)
+                        ]
+                    )
+                    sql = "SELECT SNOWFLAKE.CORTEX.COMPLETE(?, ?) as response"
+                    result = session.sql(
+                        sql, params=[self.model, prompt_text]
+                    ).collect()
+
+            if not result:
+                raise ValueError("No response from Cortex Complete")
+
+            response_text = result[0].as_dict()["RESPONSE"]
+
+            # Parse response based on format
+            if options and response_text.strip().startswith("{"):
+                try:
+                    response_data = json.loads(response_text)
+                    content = response_data.get("choices", [{}])[0].get("messages", "")
+                    usage_data = response_data.get("usage", {})
+
+                    from .utils import SnowflakeMetadataFactory
+
+                    message = AIMessage(
+                        content=content,
+                        usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(
+                            usage_data
+                        ),
+                        response_metadata=SnowflakeMetadataFactory.create_response_metadata(
+                            self.model
+                        ),
+                    )
+                except json.JSONDecodeError:
+                    # Fallback to treating as plain text using shared factories
+                    input_tokens = self._estimate_tokens(messages)
+                    output_tokens = self._estimate_tokens([{"content": response_text}])
+
+                    message = AIMessage(
+                        content=response_text,
+                        usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(
+                            input_tokens=input_tokens, output_tokens=output_tokens
+                        ),
+                        response_metadata=SnowflakeMetadataFactory.create_response_metadata(
+                            self.model
+                        ),
+                    )
+            else:
+                # Simple string response using shared factories
+                input_tokens = self._estimate_tokens(messages)
+                output_tokens = self._estimate_tokens([{"content": response_text}])
+
+                message = AIMessage(
+                    content=response_text,
+                    usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(
+                        input_tokens=input_tokens, output_tokens=output_tokens
+                    ),
+                    response_metadata=SnowflakeMetadataFactory.create_response_metadata(
+                        self.model
+                    ),
+                )
+
+            generation = ChatGeneration(message=message)
+            return ChatResult(generations=[generation])
+
+        except Exception as e:
+            logger.error(f"Error calling Cortex COMPLETE via SQL: {e}")
+            raise
+
+    async def _generate_via_sql_async(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Async generate response using Snowflake SQL with native async patterns."""
+
+        try:
+            session = self._get_session()
+
+            # Format messages for Cortex COMPLETE function
+            formatted_messages = self._format_messages_for_cortex(messages)
+
+            # Build Cortex options for SQL
+            cortex_options = self._build_cortex_options_for_sql()
+
+            # Build the SQL query using parameterized queries to avoid JSON escaping issues
+
+            if cortex_options:
+                # Use array format with options - consistent with sync version
+                prompt_data = (
+                    formatted_messages
+                    if isinstance(formatted_messages, list)
+                    else [{"role": "user", "content": formatted_messages}]
+                )
+
+                # Use parameterized queries to avoid JSON escaping issues entirely
+                sql = "SELECT SNOWFLAKE.CORTEX.COMPLETE(?, PARSE_JSON(?), PARSE_JSON(?)) as response"
+                async_job = session.sql(
+                    sql,
+                    params=[
+                        self.model,
+                        json.dumps(prompt_data),
+                        json.dumps(cortex_options),
+                    ],
+                ).collect_nowait()
+            else:
+                # Use simple string format with proper escaping
+                if isinstance(formatted_messages, str):
+                    # Use parameterized query for simple format too
+                    sql = "SELECT SNOWFLAKE.CORTEX.COMPLETE(?, ?) as response"
+                    async_job = session.sql(
+                        sql, params=[self.model, formatted_messages]
+                    ).collect_nowait()
+                else:
+                    # Convert to string for simple format
+                    prompt_text = " ".join(
+                        [
+                            msg.get("content", "")
+                            for msg in formatted_messages
+                            if isinstance(msg, dict)
+                        ]
+                    )
+                    sql = "SELECT SNOWFLAKE.CORTEX.COMPLETE(?, ?) as response"
+                    async_job = session.sql(
+                        sql, params=[self.model, prompt_text]
+                    ).collect_nowait()
+
+            # Wait for completion using thread pool only for result retrieval
+            result = await asyncio.to_thread(async_job.result)
+
+            if not result:
+                raise ValueError("No result returned from Snowflake Cortex")
+
+            # Process the response
+            response_text = result[0].as_dict()["RESPONSE"]
+
+            # Parse response based on format (same logic as sync version)
+            if cortex_options and response_text.strip().startswith("{"):
+                try:
+                    response_data = json.loads(response_text)
+                    content = response_data.get("choices", [{}])[0].get("messages", "")
+                    usage_data = response_data.get("usage", {})
+
+                    from .utils import SnowflakeMetadataFactory
+
+                    ai_message = AIMessage(
+                        content=content,
+                        usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(
+                            usage_data
+                        ),
+                        response_metadata=SnowflakeMetadataFactory.create_response_metadata(
+                            self.model
+                        ),
+                    )
+                except json.JSONDecodeError:
+                    # Fallback to treating as plain text using shared factories
+                    input_tokens = self._estimate_tokens(messages)
+                    output_tokens = self.get_num_tokens(response_text)
+
+                    from .utils import SnowflakeMetadataFactory
+
+                    ai_message = AIMessage(
+                        content=response_text,
+                        usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(
+                            input_tokens=input_tokens, output_tokens=output_tokens
+                        ),
+                        response_metadata=SnowflakeMetadataFactory.create_response_metadata(
+                            self.model
+                        ),
+                    )
+            else:
+                # Simple string response using shared factories
+                input_tokens = self._estimate_tokens(messages)
+                output_tokens = self.get_num_tokens(response_text)
+
+                from .utils import SnowflakeMetadataFactory
+
+                ai_message = AIMessage(
+                    content=response_text,
+                    usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(
+                        input_tokens=input_tokens, output_tokens=output_tokens
+                    ),
+                    response_metadata=SnowflakeMetadataFactory.create_response_metadata(
+                        self.model
+                    ),
+                )
+
+            # Create generation object
+            generation = ChatGeneration(message=ai_message)
+
+            # Create response metadata
+            response_metadata = SnowflakeMetadataFactory.create_response_metadata(
+                model=self.model
+            )
+
+            return ChatResult(generations=[generation], llm_output=response_metadata)
+
+        except Exception as e:
+            logger.error(f"Error calling Cortex COMPLETE via async SQL: {e}")
+            raise
+
+    def _generate_via_rest_api(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Generate response using REST API /api/v2/cortex/inference:complete (for tool calling)."""
+
+        try:
+            # Get session info for authentication
+            self._get_session()
+
+            # Build the REST API payload
+            payload = self._build_rest_api_payload(messages)
+
+            # Make the REST API call (authentication handled internally)
+            response = self._make_rest_api_request(payload)
+
+            # Parse the response and handle tool calls
+            return self._parse_rest_api_response(response, messages)
+
+        except Exception as e:
+            logger.error(f"Error in REST API call: {e}")
+            # Fallback error handling using shared factory
+            from .utils import SnowflakeErrorFactory
+
+            input_tokens = self._estimate_tokens(messages)
+            return SnowflakeErrorFactory.create_error_result(
+                error_message=f"Error: Failed to generate response via REST API - {str(e)}",
+                model=self.model,
+                input_tokens=input_tokens,
+            )
+
+    async def _generate_via_rest_api_async(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Async generate response using REST API with native aiohttp."""
+
+        try:
+            # Build the REST API payload
+            payload = self._build_rest_api_payload(messages)
+
+            # Make the async REST API call using aiohttp
+            response_data = await self._make_rest_api_request_async(payload)
+
+            # Create a mock response object that matches what _parse_rest_api_response expects
+            class AsyncResponseWrapper:
+                def __init__(self, data):
+                    self._data = data
+
+                def json(self):
+                    return self._data
+
+            mock_response = AsyncResponseWrapper(response_data)
+
+            # Process response with async tool execution support
+            return await self._parse_rest_api_response_async(mock_response, messages)
+
+        except Exception as e:
+            logger.error(f"Error in async REST API call: {e}")
+            # Fallback error handling using shared factory
+            from .utils import SnowflakeErrorFactory
+
+            input_tokens = self._estimate_tokens(messages)
+            return SnowflakeErrorFactory.create_error_result(
+                error_message=f"Error: Failed to generate response via async REST API - {str(e)}",
+                model=self.model,
+                input_tokens=input_tokens,
+            )
+
+    async def _agenerate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Async generate chat completion using native async patterns."""
+        try:
+            # Determine whether to use SQL or REST API based on tool requirements
+            if self._should_use_rest_api():
+                # Use native async REST API with aiohttp
+                return await self._generate_via_rest_api_async(
+                    messages, stop, run_manager, **kwargs
+                )
+            else:
+                # Use native Snowflake async for SQL execution
+                return await self._generate_via_sql_async(
+                    messages, stop, run_manager, **kwargs
+                )
+
+        except Exception as e:
+            logger.error(f"Error in async generation: {e}")
+            # Fallback error handling
+            from .utils import SnowflakeErrorFactory
+
+            input_tokens = self._estimate_tokens(messages)
+            return SnowflakeErrorFactory.create_error_result(
+                error_message=f"Error: Failed to generate async response - {str(e)}",
+                model=self.model,
+                input_tokens=input_tokens,
+            )
+
+    def get_num_tokens(self, text: str) -> int:
+        """Get the number of tokens in the given text."""
+        return self._estimate_tokens([{"role": "user", "content": text}])
+
+    def get_token_ids(self, text: str) -> List[int]:
+        """Get the token IDs for the given text."""
+        # This is a placeholder - Snowflake doesn't provide token IDs
+        # Return estimated token count as single list
+        return list(range(self.get_num_tokens(text)))

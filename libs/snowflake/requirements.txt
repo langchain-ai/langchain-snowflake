@@ -1,0 +1,16 @@
+# Core runtime dependencies for langchain-snowflake
+# Install with: pip install -r requirements.txt
+# IMPORTANT: Requires Python 3.9-3.12 (Python 3.13+ not yet fully supported by snowflake-snowpark-python)
+
+# LangChain core framework
+langchain-core>=0.3.15,<0.4.0
+
+# Snowflake integration
+snowflake-snowpark-python>=1.20.0,<2.0.0
+
+# Data validation and parsing
+pydantic>=2.7.0,<3.0.0
+
+# Optional: For RSA key pair authentication
+# Uncomment if you need key pair authentication support
+# cryptography>=42.0.0 

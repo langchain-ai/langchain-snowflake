@@ -1,101 +1,85 @@
-from types import TracebackType
-from typing import Any, Dict, List, Optional, Type
+"""Snowflake retrievers using Cortex Search."""
 
+import logging
+from typing import Any, Dict, List, Optional
+from urllib.parse import quote
+
+import aiohttp
+import requests
 from langchain_core.callbacks import (
     AsyncCallbackManagerForRetrieverRun,
     CallbackManagerForRetrieverRun,
 )
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
-from langchain_core.utils import (
-    convert_to_secret_str,
-    get_from_dict_or_env,
-    get_pydantic_field_names,
-)
-from langchain_core.utils.env import env_var_is_set
-from langchain_core.utils.utils import build_extra_kwargs
-from pydantic import Field, SecretStr, model_validator
-from snowflake.core import Root
+from pydantic import Field
 from snowflake.snowpark import Session
 
+from ._connection import SnowflakeAuthUtils, SnowflakeConnectionMixin
+from ._error_handling import SnowflakeErrorHandler
+from .formatters import format_cortex_search_documents
 
-class CortexSearchRetrieverError(Exception):
-    """Error with the CortexSearchRetriever."""
+logger = logging.getLogger(__name__)
 
 
-class CortexSearchRetriever(BaseRetriever):
-    """Snowflake Cortex Search Service document retriever.
+class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
+    """Snowflake Cortex Search retriever using REST API exclusively.
+
+    This retriever integrates with Snowflake's Cortex Search service exclusively
+    through the REST API. Cortex Search is a managed service that provides
+    enterprise-grade semantic search capabilities.
+
+    Note: This retriever uses Cortex Search, which is different from Search Preview.
+    Cortex Search only supports REST API access, not SQL functions.
 
     Setup:
-        Install ``langchain-snowflake`` and set the following environment variables:
-        - ``SNOWFLAKE_USERNAME``
-        - ``SNOWFLAKE_PASSWORD`` (optionally, if not using "externalbrowser" authenticator)
-        - ``SNOWFLAKE_ACCOUNT``
-        - ``SNOWFLAKE_DATABASE``
-        - ``SNOWFLAKE_SCHEMA``
-        - ``SNOWFLAKE_ROLE``
-
-        For example:
+        Install ``langchain-snowflake`` and configure Snowflake connection.
 
         .. code-block:: bash
 
             pip install -U langchain-snowflake
-            export SNOWFLAKE_USERNAME="your-username"
-            export SNOWFLAKE_PASSWORD="your-password"
-            export SNOWFLAKE_ACCOUNT="your-account"
-            export SNOWFLAKE_DATABASE="your-database"
-            export SNOWFLAKE_SCHEMA="your-schema"
-            export SNOWFLAKE_ROLE="your-role"
-
 
     Key init args:
-        authenticator: str
-            Authenticator method to utilize when logging into Snowflake. Refer to Snowflake documentation for more information.
-        columns: List[str]
-            List of columns to return in the search results.
-        search_column: str
-            Name of the search column in the Cortex Search Service.
-        cortex_search_service: str
-            Cortex search service to query against.
-        filter: Dict[str, Any]
-            Filter to apply to the search query.
-        limit: int
-            The maximum number of results to return in a single query.
-        snowflake_username: str
-            Snowflake username.
-        snowflake_password: SecretStr
-            Snowflake password.
-        snowflake_account: str
-            Snowflake account.
-        snowflake_database: str
-            Snowflake database.
-        snowflake_schema: str
-            Snowflake schema.
-        snowflake_role: str
-            Snowflake role.
-        sp_session: snowflake.snowpark.Session
-            Snowpark session object. Provided optionally or created from the above.
-
+        service_name: str
+            Fully qualified name of the Cortex Search service
+        session: Optional[Session]
+            Active Snowflake session
+        k: int
+            Number of documents to retrieve (default: 4)
+        search_columns: Optional[List[str]]
+            Columns to return in search results
+        filter_dict: Optional[Dict[str, Any]]
+            Filter criteria for search results
 
     Instantiate:
         .. code-block:: python
 
-            from langchain_snowflake import CortexSearchRetriever
+            from . import SnowflakeCortexSearchRetriever
 
-            retriever = CortexSearchRetriever(
-                authenticator="externalbrowser",
-                columns=["name", "description", "era"],
-                search_column="description",
-                filter={"@eq": {"era": "Jurassic"}},
-                search_service="dinosaur_svc",
+            # Using existing session (recommended)
+            retriever = SnowflakeCortexSearchRetriever(
+                service_name="mydb.myschema.my_search_service",
+                session=session,
+                k=5
+            )
+
+            # Using connection parameters
+            retriever = SnowflakeCortexSearchRetriever(
+                service_name="mydb.myschema.my_search_service",
+                account="your-account",
+                user="your-user",
+                password="your-password",
+                warehouse="your-warehouse",
+                k=3
             )
 
     Usage:
         .. code-block:: python
 
-            query = "sharp teeth and claws"
-
-            retriever.invoke(query)
+            query = "What is machine learning?"
+            docs = retriever.invoke(query)
+            for doc in docs:
+                print(doc.page_content)
 
     Use within a chain:
         .. code-block:: python
@@ -103,7 +87,7 @@ class CortexSearchRetriever(BaseRetriever):
             from langchain_core.output_parsers import StrOutputParser
             from langchain_core.prompts import ChatPromptTemplate
             from langchain_core.runnables import RunnablePassthrough
-            from langchain_openai import ChatOpenAI
+            from . import ChatSnowflake
 
             prompt = ChatPromptTemplate.from_template(
                 \"\"\"Answer the question based only on the context provided.
@@ -113,224 +97,253 @@ class CortexSearchRetriever(BaseRetriever):
             Question: {question}\"\"\"
             )
 
-            llm = ChatOpenAI(model="gpt-3.5-turbo-0125")
+            llm = ChatSnowflake(model="llama3.1-70b", session=session)
 
-            def format_docs(docs):
-                return "\\n\\n".join(doc.page_content for doc in docs)
-
+            # With auto_format_for_rag=True (default), no format_docs needed!
             chain = (
-                {"context": retriever | format_docs, "question": RunnablePassthrough()}
+                {"context": retriever, "question": RunnablePassthrough()}
                 | prompt
                 | llm
                 | StrOutputParser()
             )
 
-            chain.invoke("Which dinosaur from the Jurassic period had sharp teeth and claws?")
+            # Or with manual control:
+            # from .formatters import format_cortex_search_documents
+            # retriever_manual = SnowflakeCortexSearchRetriever(..., auto_format_for_rag=False)
+            # chain = (
+            #     {"context": retriever_manual | format_cortex_search_documents, "question": RunnablePassthrough()}
+            #     | prompt | llm | StrOutputParser()
+            # )
 
-    """  # noqa: E501
+            response = chain.invoke("What is the capital of France?")
+    """
 
-    sp_session: Session = Field(alias="sp_session")
-    """Snowpark session object."""
+    # Retriever-specific fields (connection fields inherited from SnowflakeConnectionMixin)
+    service_name: str = Field(description="Fully qualified Cortex Search service name")
 
-    _sp_root: Root
-    """Snowpark API Root object."""
+    # Search parameters
+    k: int = Field(default=4, description="Number of documents to retrieve")
+    search_columns: Optional[List[str]] = Field(
+        default=None, description="Columns to include in results"
+    )
+    filter_dict: Optional[Dict[str, Any]] = Field(
+        default=None, description="Search filters"
+    )
 
-    search_column: str = Field()
-    """Name of the search column in the Cortex Search Service. Always returned in the
-    search results."""
+    # RAG optimization parameters
+    auto_format_for_rag: bool = Field(
+        default=True,
+        description="Automatically format documents for RAG by extracting from TRANSCRIPT_TEXT metadata",
+    )
 
-    columns: List[str] = Field(default=[])
-    """List of additional columns to return in the search results."""
+    class Config:
+        """Configuration for this pydantic object."""
 
-    cortex_search_service: str = Field(alias="search_service")
-    """Cortex search service to query against."""
+        arbitrary_types_allowed = True
 
-    filter: Optional[Dict[str, Any]] = Field(default=None)
-    """Filter to apply to the search query."""
-
-    limit: Optional[int] = Field(default=None)
-    """The maximum number of results to return in a single query."""
-
-    snowflake_authenticator: Optional[str] = Field(default=None, alias="authenticator")
-    """Authenticator method to utilize when logging into Snowflake. Refer to Snowflake
-    documentation for more information."""
-
-    snowflake_username: Optional[str] = Field(default=None, alias="username")
-    """Automatically inferred from env var `SNOWFLAKE_USERNAME` if not provided."""
-
-    snowflake_password: Optional[SecretStr] = Field(default=None, alias="password")
-    """Automatically inferred from env var `SNOWFLAKE_PASSWORD` if not provided."""
-
-    snowflake_account: Optional[str] = Field(default=None, alias="account")
-    """Automatically inferred from env var `SNOWFLAKE_ACCOUNT` if not provided."""
-
-    snowflake_database: Optional[str] = Field(default=None, alias="database")
-    """Automatically inferred from env var `SNOWFLAKE_DATABASE` if not provided."""
-
-    snowflake_schema: Optional[str] = Field(default=None, alias="schema")
-    """Automatically inferred from env var `SNOWFLAKE_SCHEMA` if not provided."""
-
-    snowflake_role: Optional[str] = Field(default=None, alias="role")
-    """Automatically inferred from env var `SNOWFLAKE_ROLE` if not provided."""
-
-    @model_validator(mode="before")
-    @classmethod
-    def build_extra(cls, values: Dict[str, Any]) -> Any:
-        """Build extra kwargs from additional params that were passed in."""
-        all_required_field_names = get_pydantic_field_names(cls)
-        extra = values.get("model_kwargs", {})
-        values["model_kwargs"] = build_extra_kwargs(
-            extra, values, all_required_field_names
-        )
-        return values
-
-    @model_validator(mode="before")
-    @classmethod
-    def validate_environment(cls, values: Dict) -> Dict:
-        """Validate the environment needed to establish a Snowflake session or obtain
-        an API root from a provided Snowflake session."""
-
-        if "sp_session" not in values or values["sp_session"] is None:
-            for param, env_var in [
-                ("username", "SNOWFLAKE_USERNAME"),
-                ("account", "SNOWFLAKE_ACCOUNT"),
-                ("role", "SNOWFLAKE_ROLE"),
-                ("database", "SNOWFLAKE_DATABASE"),
-                ("schema", "SNOWFLAKE_SCHEMA"),
-            ]:
-                if param not in values and env_var_is_set(env_var):
-                    values[param] = get_from_dict_or_env(values, param, env_var)
-
-            # check whether to authenticate with password or authenticator
-            if "password" in values or env_var_is_set("SNOWFLAKE_PASSWORD"):
-                values["password"] = convert_to_secret_str(
-                    get_from_dict_or_env(values, "password", "SNOWFLAKE_PASSWORD")
-                )
-            elif "authenticator" in values or env_var_is_set("SNOWFLAKE_AUTHENTICATOR"):
-                values["authenticator"] = get_from_dict_or_env(
-                    values, "authenticator", "AUTHENTICATOR"
-                )
-                if values["authenticator"].lower() != "externalbrowser":
-                    raise CortexSearchRetrieverError(
-                        "Unable to authenticate. Unsupported authentication method"
-                    )
-            else:
-                raise CortexSearchRetrieverError(
-                    """Unable to authenticate. Please input Snowflake password directly
-                    or as environment variables, or authenticate with via another
-                    method by passing a valid `authenticator` type."""
-                )
-
-            connection_params = {
-                "account": values["account"],
-                "user": values["username"],
-                "database": values["database"],
-                "schema": values["schema"],
-                "role": values["role"],
-            }
-
-            if "password" in values:
-                connection_params["password"] = values["password"].get_secret_value()
-
-            if "authenticator" in values:
-                connection_params["authenticator"] = values["authenticator"]
-
-            try:
-                session = Session.builder.configs(connection_params).create()
-                values["sp_session"] = session
-            except Exception as e:
-                raise CortexSearchRetrieverError(f"Failed to create session: {e}")
-
-        else:
-            # If a session is provided, make sure other authentication parameters
-            # are not provided.
-            for param in [
-                "username",
-                "password",
-                "account",
-                "role",
-                "authenticator",
-            ]:
-                if param in values:
-                    raise CortexSearchRetrieverError(
-                        f"Provided both a Snowflake session and a"
-                        f"{'n' if param in ['account', 'authenticator'] else ''} "
-                        f"`{param}`. If a Snowflake session is provided, do not "
-                        f"provide any other authentication parameters (username, "
-                        f"password, account, role, authenticator)."
-                    )
-
-            # Set the overridable session parameters.
-            for param, env_var, method in [
-                ("database", "SNOWFLAKE_DATABASE", "get_current_database"),
-                ("schema", "SNOWFLAKE_SCHEMA", "get_current_schema"),
-            ]:
-                # Try to get the param as an env var if it's not in the kwargs.
-                if param in values:
-                    continue
-
-                if env_var_is_set(env_var):
-                    values[param] = get_from_dict_or_env(values, param, env_var)
-                    continue
-
-                # If we're still missing the param, try to get it from the
-                # session. Error out at this point since we couldn't find it
-                # anywhere.
-                session_value = getattr(values["sp_session"], method)()
-                if session_value is None:
-                    raise CortexSearchRetrieverError(
-                        f"Snowflake {param} not set on the provided session. Pass "
-                        f"the {param} as an argument, set it as an environment "
-                        f"variable, or provide it in your session configuration."
-                    )
-                values[param] = session_value
-
-        return values
-
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(self, **kwargs):
+        """Initialize the retriever with proper session attribute."""
+        # Call the parent initializer
         super().__init__(**kwargs)
-        self._sp_root = Root(self.sp_session)
+        # Ensure _session attribute is initialized (from SnowflakeConnectionMixin)
+        if not hasattr(self, "_session"):
+            self._session = None
 
-    def _columns(self, cols: List[str] = []) -> List[str]:
-        """The columns to return in the search results."""
-        override_cols = cols if cols else self.columns
-        return [self.search_column] + override_cols
+    # _get_session() method inherited from SnowflakeConnectionMixin
 
-    @property
-    def _database(self) -> str:
-        """The Snowflake database containing the Cortex Search Service."""
-        if self.snowflake_database is not None:
-            return self.snowflake_database
-        database = self.sp_session.get_current_database()
-        if database is None:
-            raise CortexSearchRetrieverError("Snowflake database not set on session")
-        return str(database)
+    def format_documents(self, docs: List[Document]) -> List[Document]:
+        """Format documents for RAG usage by extracting content from TRANSCRIPT_TEXT metadata.
 
-    @property
-    def _schema(self) -> str:
-        """The Snowflake schema containing the Cortex Search Service."""
-        if self.snowflake_schema is not None:
-            return self.snowflake_schema
-        schema = self.sp_session.get_current_schema()
-        if schema is None:
-            raise CortexSearchRetrieverError("Snowflake schema not set on session")
-        return str(schema)
+        This method converts Snowflake Cortex Search documents to be optimized for RAG chains.
+        The formatted content is placed in the page_content field for compatibility with
+        standard LangChain patterns.
 
-    @property
-    def _default_params(self) -> Dict[str, Any]:
-        """Default query parameters for the Cortex Search Service retriever. Can be
-        optionally overridden on each invocation of `invoke()`."""
-        params: Dict[str, Any] = {}
-        if self.filter:
-            params["filter"] = self.filter
-        if self.limit:
-            params["limit"] = self.limit
-        return params
+        Args:
+            docs: List of Document objects from Cortex Search
 
-    def _optional_params(self, **kwargs: Any) -> Dict[str, Any]:
-        params = self._default_params
-        params.update({k: v for k, v in kwargs.items() if k in ["filter", "limit"]})
-        return params
+        Returns:
+            List of Document objects with content properly formatted for RAG
+        """
+        if not docs:
+            return docs
+
+        formatted_docs = []
+        for doc in docs:
+            # Extract content using the standalone utility
+            formatted_content = format_cortex_search_documents([doc])
+
+            # Create new document with formatted content in page_content
+            # Keep original metadata for reference
+            formatted_doc = Document(
+                page_content=formatted_content,
+                metadata=doc.metadata.copy()
+                if hasattr(doc, "metadata") and doc.metadata
+                else {},
+            )
+
+            # Add formatting metadata
+            if hasattr(formatted_doc, "metadata"):
+                formatted_doc.metadata["_formatted_for_rag"] = True
+                formatted_doc.metadata["_original_page_content"] = getattr(
+                    doc, "page_content", ""
+                )
+
+            formatted_docs.append(formatted_doc)
+
+        logger.debug(f"Formatted {len(docs)} documents for RAG usage")
+        return formatted_docs
+
+    def _parse_service_name(self) -> tuple[str, str, str]:
+        """Parse the fully qualified service name into database, schema, and service components."""
+        parts = self.service_name.split(".")
+        if len(parts) != 3:
+            raise ValueError(
+                f"Service name must be fully qualified (database.schema.service): {self.service_name}"
+            )
+        return parts[0], parts[1], parts[2]
+
+    # _get_rest_api_headers() functionality replaced by SnowflakeAuthUtils.get_rest_api_headers()
+
+    def _build_rest_api_payload(self, query: str) -> Dict[str, Any]:
+        """Build REST API payload for search request."""
+        payload = {"query": query, "limit": self.k}
+
+        if self.search_columns:
+            payload["columns"] = self.search_columns
+
+        if self.filter_dict:
+            payload["filter"] = self.filter_dict
+
+        return payload
+
+    def _build_cortex_search_url(
+        self, session: Session, database: str, schema: str, service: str
+    ) -> str:
+        """Build the correct Cortex Search REST API URL.
+
+        Based on Snowflake documentation:
+        https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-search/query-cortex-search-service#rest-api
+
+        Format: https://<ACCOUNT_URL>/api/v2/databases/<DB_NAME>/schemas/<SCHEMA_NAME>/cortex-search-services/<SERVICE_NAME>:query
+        """
+        try:
+            conn = session._conn._conn
+            account = conn.account
+
+            # Build base URL with correct hostname format
+            if hasattr(conn, "host") and conn.host:
+                base_url = f"https://{conn.host}"
+            elif "." in account:
+                base_url = f"https://{account}.snowflakecomputing.com"
+            else:
+                region = getattr(conn, "region", None) or "us-west-2"
+                if region and region != "us-west-2":
+                    base_url = f"https://{account}.{region}.snowflakecomputing.com"
+                else:
+                    base_url = f"https://{account}.snowflakecomputing.com"
+
+            # Build Cortex Search specific endpoint (NOT Cortex Complete)
+            endpoint = f"/api/v2/databases/{quote(database)}/schemas/{quote(schema)}/cortex-search-services/{quote(service)}:query"
+            url = base_url + endpoint
+
+            logger.debug(f"Built Cortex Search URL: {url}")
+            return url
+
+        except Exception as e:
+            logger.error(f"Error building Cortex Search URL: {e}")
+            raise ValueError(f"Failed to build Cortex Search URL: {e}")
+
+    def _make_rest_api_request(self, query: str) -> List[Document]:
+        """Make REST API request to Cortex Search service using correct URL format."""
+        session = self._get_session()
+        database, schema, service = self._parse_service_name()
+
+        # Build correct Cortex Search URL (different from Cortex Complete)
+        url = self._build_cortex_search_url(session, database, schema, service)
+
+        # Get headers using shared utilities
+        headers = SnowflakeAuthUtils.get_rest_api_headers(
+            session=session,
+            account=getattr(self, "account", None),
+            user=getattr(self, "user", None),
+        )
+
+        # Build payload
+        payload = self._build_rest_api_payload(query)
+
+        try:
+            # Use configured timeout with SSL verification
+            timeout = getattr(self, "request_timeout", 30)
+            verify_ssl = getattr(self, "verify_ssl", True)
+
+            response = requests.post(
+                url, json=payload, headers=headers, timeout=timeout, verify=verify_ssl
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            return self._parse_rest_api_response(data)
+
+        except requests.exceptions.RequestException as e:
+            return SnowflakeErrorHandler.log_and_raise(
+                error=e,
+                operation="Cortex Search REST API request",
+                logger_instance=logger,
+            )
+
+    async def _make_rest_api_request_async(self, query: str) -> List[Document]:
+        """Make async REST API request to Cortex Search service using aiohttp."""
+        session = self._get_session()
+        database, schema, service = self._parse_service_name()
+
+        # Build correct Cortex Search URL (different from Cortex Complete)
+        url = self._build_cortex_search_url(session, database, schema, service)
+
+        # Get headers using shared utilities
+        headers = SnowflakeAuthUtils.get_rest_api_headers(
+            session=session,
+            account=getattr(self, "account", None),
+            user=getattr(self, "user", None),
+        )
+
+        # Build payload
+        payload = self._build_rest_api_payload(query)
+
+        try:
+            # Use configured timeout with SSL verification
+            timeout = getattr(self, "request_timeout", 30)
+            verify_ssl = getattr(self, "verify_ssl", True)
+
+            # Use aiohttp for true async HTTP
+            async with aiohttp.ClientSession() as client:
+                async with client.post(
+                    url,
+                    json=payload,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=timeout),
+                    ssl=verify_ssl,
+                ) as response:
+                    response.raise_for_status()
+                    data = await response.json()
+                    return self._parse_rest_api_response(data)
+
+        except Exception as e:
+            logger.error(f"Async Cortex Search REST API request failed: {e}")
+            raise
+
+    def _parse_rest_api_response(self, data: Dict[str, Any]) -> List[Document]:
+        """Parse REST API response into Document objects."""
+        documents = []
+
+        results = data.get("results", [])
+        for result in results:
+            # Extract content and metadata
+            content = result.get("content", "")
+            metadata = {k: v for k, v in result.items() if k != "content"}
+
+            documents.append(Document(page_content=content, metadata=metadata))
+
+        return documents[: self.k]  # Ensure we don't exceed requested limit
 
     def _get_relevant_documents(
         self,
@@ -339,52 +352,46 @@ class CortexSearchRetriever(BaseRetriever):
         run_manager: CallbackManagerForRetrieverRun,
         **kwargs: Any,
     ) -> List[Document]:
+        """Retrieve documents relevant to the query using Cortex Search REST API."""
         try:
-            response = (
-                self._sp_root.databases[self._database]
-                .schemas[self._schema]
-                .cortex_search_services[self.cortex_search_service]
-                .search(
-                    query=str(query),
-                    columns=self._columns(kwargs.get("columns", None)),
-                    **self._optional_params(**kwargs),
-                )
+            docs = self._make_rest_api_request(query)
+
+            # Apply auto-formatting if enabled
+            if self.auto_format_for_rag:
+                docs = self.format_documents(docs)
+
+            return docs
+        except Exception as e:
+            SnowflakeErrorHandler.log_warning_and_fallback(
+                error=e,
+                operation="Cortex Search REST API",
+                fallback_action="returning empty results",
+                logger_instance=logger,
             )
-            document_list = []
-            for result in response.results:
-                if self.search_column not in result.keys():
-                    raise CortexSearchRetrieverError(
-                        "Search column not found in Cortex Search response"
-                    )
-                else:
-                    document_list.append(
-                        self._create_document(result, self.search_column)
-                    )
-        except Exception as e:
-            raise CortexSearchRetrieverError(f"Failed in search: {e}")
-
-        return document_list
-
-    def _create_document(self, response: Dict, search_column: str) -> Document:
-        content = response.pop(search_column)
-        doc = Document(page_content=content, metadata=response)
-
-        return doc
-
-    def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> Optional[bool]:
-        try:
-            if self.sp_session is not None:
-                self.sp_session.close()
-        except Exception as e:
-            raise CortexSearchRetrieverError(f"Error while closing session: {e}")
-        return None
+            return []
 
     async def _aget_relevant_documents(
-        self, query: str, *, run_manager: AsyncCallbackManagerForRetrieverRun
+        self,
+        query: str,
+        *,
+        run_manager: AsyncCallbackManagerForRetrieverRun,
+        **kwargs: Any,
     ) -> List[Document]:
-        raise NotImplementedError("Async is not supported for Snowflake Cortex Search")
+        """Asynchronously retrieve documents relevant to the query using Cortex Search REST API."""
+        try:
+            # Use native async REST API with aiohttp
+            docs = await self._make_rest_api_request_async(query)
+
+            # Apply auto-formatting if enabled
+            if self.auto_format_for_rag:
+                docs = self.format_documents(docs)
+
+            return docs
+        except Exception as e:
+            SnowflakeErrorHandler.log_warning_and_fallback(
+                error=e,
+                operation="Cortex Search async REST API",
+                fallback_action="returning empty results",
+                logger_instance=logger,
+            )
+            return []

@@ -1,0 +1,27 @@
+# Development dependencies for langchain-snowflake
+# Install with: pip install -r requirements-dev.txt
+# IMPORTANT: Requires Python 3.9-3.12 (Python 3.13+ not yet fully supported by snowflake-snowpark-python)
+
+# Include core runtime dependencies
+-r requirements.txt
+
+# RSA key pair authentication support (for full testing)
+cryptography>=42.0.0
+
+# Testing framework and plugins
+pytest>=7.4.3,<8.0.0
+pytest-asyncio>=0.23.2,<1.0.0
+pytest-socket>=0.7.0,<1.0.0
+pytest-watcher>=0.3.4,<1.0.0
+
+# LangChain testing utilities
+langchain-tests>=0.3.5,<0.4.0
+
+# Code linting and formatting
+ruff>=0.5,<1.0
+
+# Type checking
+mypy>=1.10,<2.0
+
+# Spell checking
+codespell>=2.2.6,<3.0.0 
