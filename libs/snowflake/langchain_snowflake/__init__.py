@@ -4,9 +4,8 @@
 # Authentication utilities
 import os
 from importlib import metadata
-from typing import Dict, Optional
+from typing import Optional
 
-from pydantic import SecretStr
 from snowflake.snowpark import Session
 
 # Chat Models - Cortex Complete
@@ -85,7 +84,8 @@ def create_session_from_connection_string() -> Session:
         Configured Snowflake session
 
     Raises:
-        ValueError: If connection string format is invalid or environment variable missing
+        ValueError: If connection string format is invalid or environment variable 
+            missing
     """
     import re
     from urllib.parse import parse_qs, urlparse
@@ -94,7 +94,8 @@ def create_session_from_connection_string() -> Session:
     connection_string = os.getenv("SNOWFLAKE_CONNECTION_STRING")
     if not connection_string:
         raise ValueError(
-            "Connection string authentication requires environment variable: SNOWFLAKE_CONNECTION_STRING"
+            "Connection string authentication requires environment variable: "
+            "SNOWFLAKE_CONNECTION_STRING"
         )
 
     # Substitute environment variables in the connection string
@@ -104,7 +105,8 @@ def create_session_from_connection_string() -> Session:
         value = os.getenv(var_name)
         if value is None:
             raise ValueError(
-                f"Environment variable {var_name} referenced in connection string but not set"
+                f"Environment variable {var_name} referenced in connection string "
+                f"but not set"
             )
         return value
 
@@ -145,7 +147,8 @@ def create_session_from_connection_string() -> Session:
 
 
 def create_session_from_pat() -> Session:
-    """Create a Snowflake session using Personal Access Token (PAT) from environment variables.
+    """Create a Snowflake session using Personal Access Token (PAT) from 
+    environment variables.
 
     Reads all credentials from environment variables:
     - SNOWFLAKE_ACCOUNT: Account identifier (required)
@@ -171,7 +174,8 @@ def create_session_from_pat() -> Session:
 
     if not all([account, user, token]):
         raise ValueError(
-            "PAT authentication requires environment variables: SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, and SNOWFLAKE_PAT"
+            "PAT authentication requires environment variables: "
+            "SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, and SNOWFLAKE_PAT"
         )
 
     connection_params = {
@@ -195,7 +199,8 @@ def create_session_from_pat() -> Session:
 
 
 def create_session_from_key_pair() -> Session:
-    """Create a Snowflake session using RSA key pair authentication from environment variables.
+    """Create a Snowflake session using RSA key pair authentication from 
+    environment variables.
 
     Reads all credentials from environment variables:
     - SNOWFLAKE_ACCOUNT: Account identifier (required)
@@ -223,12 +228,14 @@ def create_session_from_key_pair() -> Session:
 
     if not all([account, user]):
         raise ValueError(
-            "Key pair authentication requires environment variables: SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER"
+            "Key pair authentication requires environment variables: "
+            "SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER"
         )
 
     if not private_key_path:
         raise ValueError(
-            "Key pair authentication requires environment variable: SNOWFLAKE_PRIVATE_KEY_PATH"
+            "Key pair authentication requires environment variable: "
+            "SNOWFLAKE_PRIVATE_KEY_PATH"
         )
 
     try:
@@ -343,7 +350,8 @@ __all__ = [
     "SnowflakeCortexAnalyst",
     # Document Formatters
     "format_cortex_search_documents",
-    # Note: Agents and workflows moved to docs/examples/ following LangChain partner package standards
+    # Note: Agents and workflows moved to docs/examples/ following LangChain 
+    # partner package standards
     # Authentication utilities
     "create_session_from_env",
     "create_session_from_connection_string",
