@@ -17,7 +17,7 @@ This guide covers setting up the development environment, running tests, and con
 
 ```bash
 git clone https://github.com/langchain-ai/langchain-snowflake
-cd langchain-snowflake
+cd langchain-snowflake/libs/snowflake
 pip install -e .
 ```
 
@@ -25,7 +25,7 @@ pip install -e .
 
 ```bash
 git clone https://github.com/langchain-ai/langchain-snowflake
-cd langchain-snowflake
+cd langchain-snowflake/libs/snowflake
 pip install -e ".[dev,test]"
 ```
 
