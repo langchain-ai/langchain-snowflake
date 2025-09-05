@@ -1,7 +1,7 @@
 """Authentication utilities for Snowflake chat models."""
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import aiohttp
 import requests
@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 class SnowflakeAuth:
     """Mixin class for Snowflake authentication functionality."""
+
+    session: Optional[Session]
 
     def _get_session(self) -> Session:
         """Get or create Snowflake session using LLM intelligence for credential prioritization."""
@@ -78,7 +80,7 @@ class SnowflakeAuth:
         This method now uses the centralized SnowflakeAuthUtils.make_rest_api_request
         which handles authentication, URL building, and request execution internally.
         """
-        session = self._get_session()
+        session: Session = self._get_session()
 
         # Use shared utility for making REST API requests (handles auth internally)
         return SnowflakeAuthUtils.make_rest_api_request(
@@ -94,9 +96,7 @@ class SnowflakeAuth:
             stream=True,  # Enable streaming for tool calling
         )
 
-    async def _make_rest_api_request_async(
-        self, payload: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def _make_rest_api_request_async(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Make async REST API request using aiohttp for true async patterns.
 
         This method provides native async HTTP for chat model REST API calls,
@@ -105,14 +105,11 @@ class SnowflakeAuth:
         Returns:
             The JSON response data as a dictionary
         """
-        session = self._get_session()
+        session: Session = self._get_session()
 
         try:
             # Build URL using shared utilities
-            url = (
-                SnowflakeAuthUtils.build_rest_api_url(session)
-                + "/api/v2/cortex/inference:complete"
-            )
+            url = SnowflakeAuthUtils.build_rest_api_url(session) + "/api/v2/cortex/inference:complete"
 
             # Get authentication headers using shared utilities
             headers = SnowflakeAuthUtils.get_rest_api_headers(

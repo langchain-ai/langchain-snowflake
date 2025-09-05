@@ -1,5 +1,6 @@
 """Centralized Snowflake session creation and management utilities."""
 
+import json
 import logging
 from typing import Any, Dict, Optional
 
@@ -10,6 +11,24 @@ logger = logging.getLogger(__name__)
 
 class SnowflakeSessionManager:
     """Centralized Snowflake session creation and management."""
+
+    @staticmethod
+    def _create_query_tag() -> str:
+        """Create standardized query tag for tracking.
+        Returns:
+            JSON string with integration metadata
+        """
+        try:
+            # Get package version
+            from importlib import metadata
+
+            version = metadata.version("langchain-snowflake")
+        except Exception:
+            version = "0.2.1"  # Fallback version
+
+        # Create simple tracking tag
+        tag_data = {"integration": "langchain-snowflake", "version": version}
+        return json.dumps(tag_data, separators=(",", ":"))
 
     @staticmethod
     def build_connection_config(
@@ -89,7 +108,14 @@ class SnowflakeSessionManager:
             ValueError: If session creation fails
         """
         try:
-            return Session.builder.configs(config).create()
+            session = Session.builder.configs(config).create()
+            # Apply query tag
+            query_tag = SnowflakeSessionManager._create_query_tag()
+            session.query_tag = query_tag
+
+            logger.debug("Created Snowflake session")
+            return session
+
         except Exception as e:
             raise ValueError(f"Failed to create Snowflake session: {e}")
 
@@ -122,17 +148,23 @@ class SnowflakeSessionManager:
         """
         # Use existing session if available
         if existing_session is not None:
+            # Apply query tag if not already set
+            if not hasattr(existing_session, "query_tag") or not existing_session.query_tag:
+                query_tag = SnowflakeSessionManager._create_query_tag()
+                existing_session.query_tag = query_tag
             return existing_session
 
         # Use cached session if available
         if cached_session is not None:
+            # Apply query tag if not already set
+            if not hasattr(cached_session, "query_tag") or not cached_session.query_tag:
+                query_tag = SnowflakeSessionManager._create_query_tag()
+                cached_session.query_tag = query_tag
             return cached_session
 
         # Build config if not provided
         if config is None:
-            config = SnowflakeSessionManager.build_connection_config(
-                **connection_params
-            )
+            config = SnowflakeSessionManager.build_connection_config(**connection_params)
 
         # Create new session
         return SnowflakeSessionManager.create_session(config)

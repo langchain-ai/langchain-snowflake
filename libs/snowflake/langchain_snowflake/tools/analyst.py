@@ -112,18 +112,14 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
         if not hasattr(self, "_session"):
             self._session = None
 
-    def _build_rest_api_payload(
-        self, query: str, semantic_model: Optional[str] = None
-    ) -> Dict[str, Any]:
+    def _build_rest_api_payload(self, query: str, semantic_model: Optional[str] = None) -> Dict[str, Any]:
         """Build REST API payload for analyst request."""
-        payload = {
-            "messages": [{"role": "user", "content": [{"type": "text", "text": query}]}]
-        }
+        payload = {"messages": [{"role": "user", "content": [{"type": "text", "text": query}]}]}
 
         # Add semantic model configuration
         if semantic_model or self.semantic_model_file:
             model_ref = semantic_model or self.semantic_model_file
-            if model_ref.startswith("@"):
+            if model_ref and model_ref.startswith("@"):
                 payload["semantic_model_file"] = model_ref
             else:
                 payload["semantic_model"] = model_ref
@@ -136,9 +132,7 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
 
         return payload
 
-    def _make_rest_api_request(
-        self, query: str, semantic_model: Optional[str] = None
-    ) -> str:
+    def _make_rest_api_request(self, query: str, semantic_model: Optional[str] = None) -> str:
         """Make REST API request to Cortex Analyst service."""
         session = self._get_session()
 
@@ -162,9 +156,7 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
             timeout = self._get_effective_timeout()
 
             # Use shared auth utilities to get proper headers
-            headers = SnowflakeAuthUtils.get_rest_api_headers(
-                session=session, account=self.account, user=self.user
-            )
+            headers = SnowflakeAuthUtils.get_rest_api_headers(session=session, account=self.account, user=self.user)
 
             # Make secure request with proper SSL verification and timeout
             response = requests.post(
@@ -181,13 +173,18 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
             return self._parse_rest_api_response(data)
 
         except Exception as e:
-            return SnowflakeToolErrorHandler.handle_rest_api_error(
-                "Cortex Analyst REST API request", e, query=query
+            # Log the error for debugging
+            error_msg = SnowflakeToolErrorHandler.handle_rest_api_error(
+                error=e,
+                tool_name="cortex_analyst",
+                operation="REST API request",
+                logger_instance=logger,
             )
+            logger.warning(f"REST API request failed: {error_msg}")
+            # Re-raise to trigger fallback logic
+            raise e
 
-    async def _make_rest_api_request_async(
-        self, query: str, semantic_model: Optional[str] = None
-    ) -> str:
+    async def _make_rest_api_request_async(self, query: str, semantic_model: Optional[str] = None) -> str:
         """Make async REST API request to Cortex Analyst using aiohttp."""
         session = self._get_session()
         payload = self._build_rest_api_payload(query, semantic_model)
@@ -200,9 +197,7 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
             timeout = self._get_effective_timeout()
 
             # Use shared auth utilities to get proper headers
-            headers = SnowflakeAuthUtils.get_rest_api_headers(
-                session=session, account=self.account, user=self.user
-            )
+            headers = SnowflakeAuthUtils.get_rest_api_headers(session=session, account=self.account, user=self.user)
 
             # Use aiohttp for true async HTTP requests
             async with aiohttp.ClientSession() as client:
@@ -218,9 +213,16 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
                     return self._parse_rest_api_response(data)
 
         except Exception as e:
-            return SnowflakeToolErrorHandler.handle_rest_api_error(
-                "Cortex Analyst async REST API request", e, query=query
+            # Log the error for debugging
+            error_msg = SnowflakeToolErrorHandler.handle_rest_api_error(
+                error=e,
+                tool_name="cortex_analyst",
+                operation="async REST API request",
+                logger_instance=logger,
             )
+            logger.warning(f"Async REST API request failed: {error_msg}")
+            # Re-raise to trigger fallback logic
+            raise e
 
     def _parse_rest_api_response(self, data: Dict[str, Any]) -> str:
         """Parse REST API response from Cortex Analyst."""
@@ -239,9 +241,7 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
             for item in content:
                 content_type = item.get("type")
                 if content_type == "text":
-                    result["content"].append(
-                        {"type": "text", "text": item.get("text", "")}
-                    )
+                    result["content"].append({"type": "text", "text": item.get("text", "")})
                 elif content_type == "sql":
                     result["content"].append(
                         {
@@ -262,12 +262,13 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
 
         except Exception as e:
             return SnowflakeToolErrorHandler.handle_tool_error(
-                "parsing REST API response", e, raw_response=data
+                error=e,
+                tool_name="cortex_analyst",
+                operation="parsing REST API response",
+                logger_instance=logger,
             )
 
-    def _fallback_sql_function(
-        self, query: str, semantic_model: Optional[str] = None
-    ) -> str:
+    def _fallback_sql_function(self, query: str, semantic_model: Optional[str] = None) -> str:
         """Fallback method using Cortex Complete function for text-to-SQL.
 
         Note: SNOWFLAKE.CORTEX.ANALYST does not exist as a SQL function.
@@ -281,13 +282,19 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
             return self._fallback_text2sql(session, query)
 
         except Exception as e:
-            return SnowflakeToolErrorHandler.handle_sql_error(
-                "SQL function fallback", e, query=query
+            # Log the SQL fallback error
+            error_msg = SnowflakeToolErrorHandler.handle_sql_error(
+                error=e,
+                tool_name="cortex_analyst",
+                sql_query=query,
+                operation="SQL function fallback",
+                logger_instance=logger,
             )
+            logger.error(f"SQL fallback failed: {error_msg}")
+            # Re-raise so the main error handler can decide what to do
+            raise e
 
-    async def _fallback_sql_function_async(
-        self, query: str, semantic_model: Optional[str] = None
-    ) -> str:
+    async def _fallback_sql_function_async(self, query: str, semantic_model: Optional[str] = None) -> str:
         """Async fallback method using Cortex Complete function for text-to-SQL with native Snowflake async.
 
         Note: SNOWFLAKE.CORTEX.ANALYST does not exist as a SQL function.
@@ -301,9 +308,17 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
             return await self._afallback_text2sql(session, query)
 
         except Exception as e:
-            return SnowflakeToolErrorHandler.handle_sql_error(
-                "async SQL function fallback", e, query=query
+            # Log the async SQL fallback error
+            error_msg = SnowflakeToolErrorHandler.handle_sql_error(
+                error=e,
+                tool_name="cortex_analyst",
+                sql_query=query,
+                operation="async SQL function fallback",
+                logger_instance=logger,
             )
+            logger.error(f"Async SQL fallback failed: {error_msg}")
+            # Re-raise so the main error handler can decide what to do
+            raise e
 
     def _run(
         self,
@@ -331,9 +346,25 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
             # Try fallback method if REST API fails
             if self.use_rest_api:
                 logger.info("Falling back to SQL function")
-                return self._fallback_sql_function(query, semantic_model)
+                try:
+                    return self._fallback_sql_function(query, semantic_model)
+                except Exception as fallback_error:
+                    # Both REST API and SQL fallback failed
+                    logger.error(
+                        f"""Both REST API and SQL fallback failed. 
+                                 REST API error: {e}, Fallback error: {fallback_error}"""
+                    )
+                    return SnowflakeToolErrorHandler.handle_tool_error(
+                        error=fallback_error,
+                        tool_name="cortex_analyst",
+                        operation="execution with fallback",
+                        logger_instance=logger,
+                    )
             return SnowflakeToolErrorHandler.handle_tool_error(
-                "Cortex Analyst execution", e, query=query
+                error=e,
+                tool_name="cortex_analyst",
+                operation="execution",
+                logger_instance=logger,
             )
 
     async def _arun(
@@ -362,9 +393,25 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
             # Try fallback method if REST API fails
             if self.use_rest_api:
                 logger.info("Falling back to async SQL function")
-                return await self._fallback_sql_function_async(query, semantic_model)
+                try:
+                    return await self._fallback_sql_function_async(query, semantic_model)
+                except Exception as fallback_error:
+                    # Both async REST API and SQL fallback failed
+                    logger.error(
+                        f"""Both async REST API and SQL fallback failed. 
+                                 REST API error: {e}, Fallback error: {fallback_error}"""
+                    )
+                    return SnowflakeToolErrorHandler.handle_tool_error(
+                        error=fallback_error,
+                        tool_name="cortex_analyst",
+                        operation="async execution with fallback",
+                        logger_instance=logger,
+                    )
             return SnowflakeToolErrorHandler.handle_tool_error(
-                "Cortex Analyst async execution", e, query=query
+                error=e,
+                tool_name="cortex_analyst",
+                operation="async execution",
+                logger_instance=logger,
             )
 
     def _fallback_text2sql(self, session: Session, query: str) -> str:
@@ -398,13 +445,15 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
                     }
                 )
             else:
-                return json.dumps(
-                    {"error": "No SQL generated", "method": "fallback_text2sql"}
-                )
+                return json.dumps({"error": "No SQL generated", "method": "fallback_text2sql"})
 
         except Exception as e:
             return SnowflakeToolErrorHandler.handle_sql_error(
-                "fallback text2sql", e, query=query
+                error=e,
+                tool_name="cortex_analyst",
+                sql_query=query,
+                operation="fallback text2sql",
+                logger_instance=logger,
             )
 
     async def _afallback_text2sql(self, session: Session, query: str) -> str:
@@ -440,11 +489,13 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
                     }
                 )
             else:
-                return json.dumps(
-                    {"error": "No SQL generated", "method": "fallback_text2sql"}
-                )
+                return json.dumps({"error": "No SQL generated", "method": "fallback_text2sql"})
 
         except Exception as e:
             return SnowflakeToolErrorHandler.handle_sql_error(
-                "async fallback text2sql", e, query=query
+                error=e,
+                tool_name="cortex_analyst",
+                sql_query=query,
+                operation="async fallback text2sql",
+                logger_instance=logger,
             )

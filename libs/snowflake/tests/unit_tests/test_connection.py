@@ -2,7 +2,7 @@
 
 from unittest.mock import Mock, patch
 
-from pydantic import SecretStr
+from pydantic import BaseModel, SecretStr
 
 from langchain_snowflake._connection import (
     SnowflakeAuthUtils,
@@ -17,9 +17,6 @@ class MockSession:
     def __init__(self):
         self.account = "test-account"
         self.user = "test-user"
-
-
-from pydantic import BaseModel
 
 
 class ConnectionMixinTestImpl(SnowflakeConnectionMixin, BaseModel):

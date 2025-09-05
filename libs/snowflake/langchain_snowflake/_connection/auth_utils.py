@@ -56,9 +56,7 @@ class SnowflakeAuthUtils:
                     private_key = private_key.encode()
 
                 password = passphrase.encode() if passphrase else None
-                private_key_obj = serialization.load_pem_private_key(
-                    private_key, password=password
-                )
+                private_key_obj = serialization.load_pem_private_key(private_key, password=password)
             else:
                 private_key_obj = private_key
 
@@ -138,7 +136,7 @@ class SnowflakeAuthUtils:
             rest = conn.rest
 
             # Extract token from session if available
-            if hasattr(rest, "token") and rest.token:
+            if rest and hasattr(rest, "token") and rest.token:
                 return {
                     **base_headers,
                     "Authorization": f'Snowflake Token="{rest.token}"',
@@ -275,18 +273,14 @@ class SnowflakeAuthUtils:
 
         try:
             # Query session parameter for statement timeout
-            result = session.sql(
-                "SHOW PARAMETERS LIKE 'STATEMENT_TIMEOUT_IN_SECONDS'"
-            ).collect()
+            result = session.sql("SHOW PARAMETERS LIKE 'STATEMENT_TIMEOUT_IN_SECONDS'").collect()
 
             if result and len(result) > 0:
                 timeout_value = result[0]["value"]
                 # Convert to int, 0 means disabled (unlimited)
                 session_timeout = int(timeout_value)
                 if session_timeout > 0:
-                    logger.debug(
-                        f"Using session STATEMENT_TIMEOUT_IN_SECONDS: {session_timeout}"
-                    )
+                    logger.debug(f"Using session STATEMENT_TIMEOUT_IN_SECONDS: {session_timeout}")
                     return session_timeout
 
         except Exception as e:

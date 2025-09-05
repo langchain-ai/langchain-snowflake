@@ -4,7 +4,7 @@ LangChain integration for Snowflake Cortex AI. Native support for chat models, t
 
 ## Production Ready
 
-- 39 comprehensive tests covering core functionality
+- 50+ comprehensive tests covering core functionality
 - Native tool calling with Cortex Complete
 - Structured output support (Pydantic, TypedDict, JSON)
 - Complete async/await implementation

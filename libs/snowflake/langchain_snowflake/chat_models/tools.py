@@ -58,9 +58,7 @@ class SnowflakeTools:
             tool_spec = {
                 "type": "generic",
                 "name": openai_tool["function"]["name"],
-                "description": openai_tool["function"][
-                    "description"
-                ],  # Add description field
+                "description": openai_tool["function"]["description"],  # Add description field
                 "input_schema": input_schema,
             }
 
@@ -96,12 +94,12 @@ class SnowflakeTools:
             }
         )
 
-    def _build_enhanced_system_prompt(
-        self, tools: Optional[List[Dict[str, Any]]] = None
-    ) -> str:
+    def _build_enhanced_system_prompt(self, tools: Optional[List[Dict[str, Any]]] = None) -> str:
         """Build an enhanced system prompt for better tool calling and reasoning."""
         if not tools or not self._has_tools():
-            return """You are a helpful, knowledgeable assistant. Provide accurate, thoughtful responses based on the information available to you. If you're uncertain about something, acknowledge that uncertainty rather than guessing."""
+            return """You are a helpful, knowledgeable assistant. Provide accurate, thoughtful responses 
+                        based on the information available to you. If you're uncertain about something, 
+                        acknowledge that uncertainty rather than guessing."""
 
         # Extract tool descriptions for the prompt
         tool_descriptions = []
@@ -113,14 +111,17 @@ class SnowflakeTools:
 
         tool_list = "\n".join(tool_descriptions)
 
-        return f"""You are an intelligent assistant with access to tools. Your role is to help users by understanding their needs and using available tools when appropriate.
+        return f"""You are an intelligent assistant with access to tools. 
+                    Your role is to help users by understanding their needs and 
+                    using available tools when appropriate.
 
 ## Available Tools:
 {tool_list}
 
 ## Guidelines for Tool Usage:
 
-1. **Analyze First**: Carefully understand what the user is asking for and determine if any tools can help provide a better answer.
+1. **Analyze First**: Carefully understand what the user is asking for and determine 
+if any tools can help provide a better answer.
 
 2. **Choose Wisely**: Select the most appropriate tool(s) based on:
    - The user's specific question or request
@@ -134,7 +135,8 @@ class SnowflakeTools:
 
 4. **Reasoning Process**: 
    - If multiple tools could be relevant, choose the most specific and appropriate one
-   - If a tool doesn't provide the expected information, acknowledge this and either try an alternative approach or explain the limitation
+   - If a tool doesn't provide the expected information, acknowledge this and either 
+   try an alternative approach or explain the limitation
    - Combine tool results with your knowledge to provide comprehensive, accurate answers
 
 5. **Response Quality**:
@@ -143,9 +145,11 @@ class SnowflakeTools:
    - If tools are not needed or relevant, provide direct answers based on your knowledge
    - Be transparent about when you're using tools vs. providing direct knowledge
 
-6. **Error Handling**: If a tool fails or returns unexpected results, explain this to the user and provide alternative information when possible.
+6. **Error Handling**: If a tool fails or returns unexpected results, explain this to the user 
+and provide alternative information when possible.
 
-Remember: Use tools to enhance your responses, not replace thoughtful analysis. The goal is to provide the most helpful, accurate, and relevant information to the user."""
+Remember: Use tools to enhance your responses, not replace thoughtful analysis. 
+The goal is to provide the most helpful, accurate, and relevant information to the user."""
 
     def _build_rest_api_payload(self, messages: List[BaseMessage]) -> Dict[str, Any]:
         """Build REST API payload following official Snowflake format."""
@@ -174,7 +178,7 @@ Remember: Use tools to enhance your responses, not replace thoughtful analysis. 
             else:
                 role = "user"  # fallback
 
-            api_messages.append({"role": role, "content": message.content})
+            api_messages.append({"role": role, "content": message.content})  # type: ignore[dict-item]
 
         # Build payload exactly as shown in official documentation
         payload = {"model": self.model, "messages": api_messages}
@@ -186,18 +190,16 @@ Remember: Use tools to enhance your responses, not replace thoughtful analysis. 
 
         return payload
 
-    def _parse_rest_api_response(
-        self, response: requests.Response, original_messages: List[BaseMessage]
-    ) -> ChatResult:
+    def _parse_rest_api_response(self, response: requests.Response, original_messages: List[BaseMessage]) -> ChatResult:
         """Parse REST API response and handle tool calls."""
 
         # Use lists and dicts to store mutable data
-        content_parts = []
-        tool_calls = []
-        usage_data = {}
+        content_parts: List[str] = []
+        tool_calls: List[Dict[str, Any]] = []
+        usage_data: Dict[str, Any] = {}
 
         # Track tool call input buffers separately
-        tool_input_buffers = {}
+        tool_input_buffers: Dict[str, str] = {}
 
         # Parse streaming response - handle both streaming and non-streaming formats
         try:
@@ -209,9 +211,7 @@ Remember: Use tools to enhance your responses, not replace thoughtful analysis. 
                         line_str = line.decode("utf-8")
                         if line_str.startswith("data: "):
                             try:
-                                data = json.loads(
-                                    line_str[6:]
-                                )  # Remove 'data: ' prefix
+                                data = json.loads(line_str[6:])  # Remove 'data: ' prefix
                                 self._parse_streaming_chunk(
                                     data,
                                     content_parts,
@@ -227,9 +227,7 @@ Remember: Use tools to enhance your responses, not replace thoughtful analysis. 
                     data = response.json()
                     if isinstance(data, dict):
                         # Direct response format
-                        content_str, extracted_tool_calls, extracted_usage = (
-                            self._parse_json_response(data)
-                        )
+                        content_str, extracted_tool_calls, extracted_usage = self._parse_json_response(data)
                         content_parts.append(content_str)
                         tool_calls.extend(extracted_tool_calls)
                         usage_data.update(extracted_usage)
@@ -256,36 +254,24 @@ Remember: Use tools to enhance your responses, not replace thoughtful analysis. 
 
         # AUTO-EXECUTE TOOLS: Option 1 Implementation
         executed_tool_results = []
-        if (
-            tool_calls
-            and self._bound_tools
-            and getattr(self, "_auto_execute_tools", True)
-        ):
+        if tool_calls and self._bound_tools and getattr(self, "_auto_execute_tools", True):
             executed_tool_results = self._execute_planned_tools(tool_calls)
 
             # Enhance content with tool execution results
             if executed_tool_results:
-                full_content = self._combine_content_with_tool_results(
-                    full_content, executed_tool_results
-                )
+                full_content = self._combine_content_with_tool_results(full_content, executed_tool_results)
 
         # Create response message using shared factories
         from .utils import SnowflakeMetadataFactory
 
         # Calculate fallback token counts if not provided in usage_data
-        input_tokens = usage_data.get(
-            "prompt_tokens", self._estimate_tokens(original_messages)
-        )
-        output_tokens = usage_data.get(
-            "completion_tokens", self._estimate_tokens([{"content": full_content}])
-        )
+        input_tokens = usage_data.get("prompt_tokens", self._estimate_tokens(original_messages))
+        output_tokens = usage_data.get("completion_tokens", self._estimate_tokens([{"content": full_content}]))
 
         message = AIMessage(
             content=full_content,
             tool_calls=tool_calls,
-            usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(
-                usage_data, input_tokens, output_tokens
-            ),
+            usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(usage_data, input_tokens, output_tokens),
             response_metadata=SnowflakeMetadataFactory.create_response_metadata(
                 self.model, finish_reason="tool_calls" if tool_calls else "stop"
             ),
@@ -303,7 +289,7 @@ Remember: Use tools to enhance your responses, not replace thoughtful analysis. 
         Returns:
             List of tool execution results
         """
-        results = []
+        results: List[Dict[str, Any]] = []
 
         for tool_call in tool_calls:
             try:
@@ -372,9 +358,7 @@ Remember: Use tools to enhance your responses, not replace thoughtful analysis. 
                     if hasattr(matching_tool, "ainvoke"):
                         result = await matching_tool.ainvoke(tool_args)
                     else:
-                        result = await asyncio.to_thread(
-                            matching_tool.invoke, tool_args
-                        )
+                        result = await asyncio.to_thread(matching_tool.invoke, tool_args)
 
                     return {
                         "tool_call_id": tool_id,
@@ -391,9 +375,7 @@ Remember: Use tools to enhance your responses, not replace thoughtful analysis. 
                     }
 
             except Exception as e:
-                logger.error(
-                    f"Async tool execution error for {tool_call.get('name')}: {e}"
-                )
+                logger.error(f"Async tool execution error for {tool_call.get('name')}: {e}")
                 return {
                     "tool_call_id": tool_call.get("id", f"call_async_{id(tool_call)}"),
                     "tool_name": tool_call.get("name", "unknown"),
@@ -403,9 +385,7 @@ Remember: Use tools to enhance your responses, not replace thoughtful analysis. 
 
         # Execute all tools concurrently
         if tool_calls:
-            results = await asyncio.gather(
-                *[execute_single_tool(tc) for tc in tool_calls]
-            )
+            results = await asyncio.gather(*[execute_single_tool(tc) for tc in tool_calls])
             return list(results)
         else:
             return []
@@ -433,9 +413,7 @@ Remember: Use tools to enhance your responses, not replace thoughtful analysis. 
 
         return None
 
-    def _combine_content_with_tool_results(
-        self, original_content: str, tool_results: List[Dict]
-    ) -> str:
+    def _combine_content_with_tool_results(self, original_content: str, tool_results: List[Dict]) -> str:
         """Combine the original LLM content with tool execution results."""
         if not tool_results:
             return original_content
@@ -448,19 +426,13 @@ Remember: Use tools to enhance your responses, not replace thoughtful analysis. 
             enhanced_parts.append("\n\nTool Execution Results:")
             for result in tool_results:
                 if result["status"] == "success":
-                    enhanced_parts.append(
-                        f"\n• {result['tool_name']}: {result['result']}"
-                    )
+                    enhanced_parts.append(f"\n• {result['tool_name']}: {result['result']}")
                 else:
-                    enhanced_parts.append(
-                        f"\n• {result['tool_name']}: ❌ {result['result']}"
-                    )
+                    enhanced_parts.append(f"\n• {result['tool_name']}: ❌ {result['result']}")
 
         return "".join(enhanced_parts)
 
-    async def _parse_rest_api_response_async(
-        self, response, original_messages: List[BaseMessage]
-    ) -> ChatResult:
+    async def _parse_rest_api_response_async(self, response, original_messages: List[BaseMessage]) -> ChatResult:
         """Async version of _parse_rest_api_response with async tool execution."""
 
         # Use lists and dicts to store mutable data
@@ -472,9 +444,7 @@ Remember: Use tools to enhance your responses, not replace thoughtful analysis. 
         try:
             data = response.json()
             if isinstance(data, dict):
-                content_str, extracted_tool_calls, extracted_usage = (
-                    self._parse_json_response(data)
-                )
+                content_str, extracted_tool_calls, extracted_usage = self._parse_json_response(data)
                 content_parts.append(content_str)
                 tool_calls.extend(extracted_tool_calls)
                 usage_data.update(extracted_usage)
@@ -487,36 +457,24 @@ Remember: Use tools to enhance your responses, not replace thoughtful analysis. 
 
         # AUTO-EXECUTE TOOLS: Async Version
         executed_tool_results = []
-        if (
-            tool_calls
-            and self._bound_tools
-            and getattr(self, "_auto_execute_tools", True)
-        ):
+        if tool_calls and self._bound_tools and getattr(self, "_auto_execute_tools", True):
             executed_tool_results = await self._execute_planned_tools_async(tool_calls)
 
             # Enhance content with tool execution results
             if executed_tool_results:
-                full_content = self._combine_content_with_tool_results(
-                    full_content, executed_tool_results
-                )
+                full_content = self._combine_content_with_tool_results(full_content, executed_tool_results)
 
         # Create response message using shared factories
         from .utils import SnowflakeMetadataFactory
 
         # Calculate fallback token counts if not provided in usage_data
-        input_tokens = usage_data.get(
-            "prompt_tokens", self._estimate_tokens(original_messages)
-        )
-        output_tokens = usage_data.get(
-            "completion_tokens", self._estimate_tokens([{"content": full_content}])
-        )
+        input_tokens = usage_data.get("prompt_tokens", self._estimate_tokens(original_messages))
+        output_tokens = usage_data.get("completion_tokens", self._estimate_tokens([{"content": full_content}]))
 
         message = AIMessage(
             content=full_content,
             tool_calls=tool_calls,
-            usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(
-                usage_data, input_tokens, output_tokens
-            ),
+            usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(usage_data, input_tokens, output_tokens),
             response_metadata=SnowflakeMetadataFactory.create_response_metadata(
                 self.model, finish_reason="tool_calls" if tool_calls else "stop"
             ),
@@ -611,9 +569,7 @@ Remember: Use tools to enhance your responses, not replace thoughtful analysis. 
                             # Create new tool call using LangChain format
                             from langchain_core.messages.tool import tool_call
 
-                            tool_call_obj = tool_call(
-                                name=item["name"], args={}, id=item["tool_use_id"]
-                            )
+                            tool_call_obj = tool_call(name=item["name"], args={}, id=item["tool_use_id"])
                             tool_calls.append(tool_call_obj)
                             tool_input_buffers[item["tool_use_id"]] = ""
 

@@ -24,24 +24,16 @@ class SnowflakeToolResponse(BaseModel):
     """Base class for all Snowflake tool responses (documentation only)."""
 
     success: bool = Field(description="Whether the operation was successful")
-    error: Optional[str] = Field(
-        default=None, description="Error message if operation failed"
-    )
+    error: Optional[str] = Field(default=None, description="Error message if operation failed")
 
 
 class SnowflakeCortexAnalystOutput(SnowflakeToolResponse):
     """Output schema for Snowflake Cortex Analyst tool."""
 
     sql_query: Optional[str] = Field(default=None, description="Generated SQL query")
-    results: Optional[List[Dict[str, Any]]] = Field(
-        default=None, description="Query execution results"
-    )
-    explanation: Optional[str] = Field(
-        default=None, description="Natural language explanation"
-    )
-    request_id: Optional[str] = Field(
-        default=None, description="Unique request identifier"
-    )
+    results: Optional[List[Dict[str, Any]]] = Field(default=None, description="Query execution results")
+    explanation: Optional[str] = Field(default=None, description="Natural language explanation")
+    request_id: Optional[str] = Field(default=None, description="Unique request identifier")
 
 
 class SnowflakeQueryOutput(SnowflakeToolResponse):
@@ -57,9 +49,7 @@ class CortexSentimentOutput(SnowflakeToolResponse):
 
     text: str = Field(description="Original text analyzed")
     sentiment_score: float = Field(description="Sentiment score (-1 to 1)")
-    sentiment_label: Literal["positive", "negative", "neutral"] = Field(
-        description="Sentiment classification"
-    )
+    sentiment_label: Literal["positive", "negative", "neutral"] = Field(description="Sentiment classification")
 
 
 class CortexSummarizerOutput(SnowflakeToolResponse):
@@ -77,9 +67,7 @@ class CortexTranslatorOutput(SnowflakeToolResponse):
     original_text: str = Field(description="Original text")
     translated_text: str = Field(description="Translated text")
     target_language: str = Field(description="Target language code")
-    source_language: Optional[str] = Field(
-        default=None, description="Detected source language"
-    )
+    source_language: Optional[str] = Field(default=None, description="Detected source language")
 
 
 class CortexCompleteOutput(SnowflakeToolResponse):
@@ -99,9 +87,7 @@ class SnowflakeCortexAnalystInput(BaseModel):
     """Input schema for Snowflake Cortex Analyst tool."""
 
     query: str = Field(description="Natural language question about the data")
-    semantic_model: Optional[str] = Field(
-        default=None, description="Optional semantic model to use for the query"
-    )
+    semantic_model: Optional[str] = Field(default=None, description="Optional semantic model to use for the query")
 
 
 class SnowflakeQueryInput(BaseModel):
@@ -126,9 +112,7 @@ class CortexTranslatorInput(BaseModel):
     """Input schema for CortexTranslatorTool."""
 
     text: str = Field(description="Text to translate")
-    target_language: str = Field(
-        description="Target language code (e.g., 'es', 'fr', 'de')"
-    )
+    target_language: str = Field(description="Target language code (e.g., 'es', 'fr', 'de')")
     source_language: Optional[str] = Field(
         default=None,
         description="Source language code (e.g., 'en', 'es', 'fr', 'de'). Defaults to 'en' if not specified.",
@@ -139,9 +123,5 @@ class CortexCompleteInput(BaseModel):
     """Input schema for CortexCompleteTool."""
 
     prompt: str = Field(description="Text prompt for completion")
-    model: str = Field(
-        default="llama2-70b-chat", description="Cortex model to use for completion"
-    )
-    max_tokens: Optional[int] = Field(
-        default=None, description="Maximum tokens in completion"
-    )
+    model: str = Field(default="llama2-70b-chat", description="Cortex model to use for completion")
+    max_tokens: Optional[int] = Field(default=None, description="Maximum tokens in completion")

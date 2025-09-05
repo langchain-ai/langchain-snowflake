@@ -3,7 +3,7 @@
 import asyncio
 import json
 import logging
-from typing import Any, AsyncIterator, Iterator, List, Optional
+from typing import Any, AsyncIterator, Dict, Iterator, List, Optional
 
 import aiohttp
 from langchain_core.callbacks import (
@@ -47,9 +47,7 @@ class SnowflakeStreaming:
                     yield chunk
             else:
                 # Simulate streaming by chunking the complete response
-                result = self._generate(
-                    messages, stop=stop, run_manager=run_manager, **kwargs
-                )
+                result = self._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
 
                 if result.generations:
                     content = result.generations[0].message.content
@@ -63,16 +61,8 @@ class SnowflakeStreaming:
                         chunk = ChatGenerationChunk(
                             message=AIMessageChunk(
                                 content=chunk_content,
-                                usage_metadata=result.generations[
-                                    0
-                                ].message.usage_metadata
-                                if i == 0
-                                else None,
-                                response_metadata=result.generations[
-                                    0
-                                ].message.response_metadata
-                                if i == 0
-                                else {},
+                                usage_metadata=(result.generations[0].message.usage_metadata if i == 0 else None),
+                                response_metadata=(result.generations[0].message.response_metadata if i == 0 else {}),
                             )
                         )
 
@@ -102,9 +92,7 @@ class SnowflakeStreaming:
         try:
             if self._should_use_rest_api():
                 # Use native async REST API streaming with aiohttp
-                async for chunk in self._astream_via_rest_api(
-                    messages, run_manager, **kwargs
-                ):
+                async for chunk in self._astream_via_rest_api(messages, run_manager, **kwargs):
                     yield chunk
             else:
                 # For SQL-based streaming, we currently delegate to sync method since
@@ -121,9 +109,7 @@ class SnowflakeStreaming:
             # Yield an error chunk
             from langchain_core.outputs import ChatGenerationChunk
 
-            error_chunk = ChatGenerationChunk(
-                message=AIMessageChunk(content=f"Error: {str(e)}")
-            )
+            error_chunk = ChatGenerationChunk(message=AIMessageChunk(content=f"Error: {str(e)}"))
             yield error_chunk
 
     def _stream_via_rest_api(
@@ -164,10 +150,10 @@ class SnowflakeStreaming:
             response.raise_for_status()
 
             # Parse Server-Sent Events stream
-            content_buffer = []
-            tool_calls = []
-            tool_input_buffers = {}
-            usage_data = {}
+            content_buffer: List[str] = []
+            tool_calls: List[Dict[str, Any]] = []
+            tool_input_buffers: Dict[str, str] = {}
+            usage_data: Dict[str, Any] = {}
 
             for line in response.iter_lines():
                 if line:
@@ -177,7 +163,7 @@ class SnowflakeStreaming:
                             data = json.loads(line_str[6:])
 
                             # Parse the streaming chunk
-                            chunk_parts = []
+                            chunk_parts: List[str] = []
                             self._parse_streaming_chunk(
                                 data,
                                 chunk_parts,
@@ -196,20 +182,16 @@ class SnowflakeStreaming:
                                 if len(content_buffer) == 1 and usage_data:
                                     from .utils import SnowflakeMetadataFactory
 
-                                    usage_metadata = (
-                                        SnowflakeMetadataFactory.create_usage_metadata(
-                                            usage_data
-                                        )
-                                    )
+                                    usage_metadata = SnowflakeMetadataFactory.create_usage_metadata(usage_data)
 
                                 chunk = ChatGenerationChunk(
                                     message=AIMessageChunk(
                                         content=chunk_content,
                                         tool_calls=tool_calls if tool_calls else None,
                                         usage_metadata=usage_metadata,
-                                        response_metadata={"model_name": self.model}
-                                        if len(content_buffer) == 1
-                                        else {},
+                                        response_metadata=(
+                                            {"model_name": self.model} if len(content_buffer) == 1 else {}
+                                        ),
                                     )
                                 )
 
@@ -252,10 +234,7 @@ class SnowflakeStreaming:
             session = self._get_session()
             from .._connection import SnowflakeAuthUtils
 
-            url = (
-                SnowflakeAuthUtils.build_rest_api_url(session)
-                + "/api/v2/cortex/inference:complete"
-            )
+            url = SnowflakeAuthUtils.build_rest_api_url(session) + "/api/v2/cortex/inference:complete"
             headers = SnowflakeAuthUtils.get_rest_api_headers(
                 session=session,
                 account=getattr(self, "account", None),
@@ -304,9 +283,7 @@ class SnowflakeStreaming:
                                         content_buffer.append(content)
 
                                         # Create chunk using shared factory
-                                        chunk = ChatGenerationChunk(
-                                            message=AIMessageChunk(content=content)
-                                        )
+                                        chunk = ChatGenerationChunk(message=AIMessageChunk(content=content))
                                         yield chunk
 
                                 # Handle usage data if present

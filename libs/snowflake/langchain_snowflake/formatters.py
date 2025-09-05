@@ -51,33 +51,24 @@ def format_cortex_search_documents(
             content = doc.metadata[content_field]
             if content and str(content).strip():
                 content_parts.append(str(content).strip())
-                logger.debug(
-                    f"Extracted content from {content_field} for document {i + 1}: {len(str(content))} chars"
-                )
+                logger.debug(f"Extracted content from {content_field} for document {i + 1}: {len(str(content))} chars")
                 continue
 
         # Fallback to page_content if enabled and available
-        if (
-            fallback_to_page_content
-            and hasattr(doc, "page_content")
-            and doc.page_content
-        ):
+        if fallback_to_page_content and hasattr(doc, "page_content") and doc.page_content:
             content = doc.page_content
             if content and str(content).strip():
                 content_parts.append(str(content).strip())
-                logger.debug(
-                    f"Used page_content fallback for document {i + 1}: {len(str(content))} chars"
-                )
+                logger.debug(f"Used page_content fallback for document {i + 1}: {len(str(content))} chars")
                 continue
 
         # Log when no content is found
         logger.warning(
-            f"No content found for document {i + 1}. Available metadata keys: {list(doc.metadata.keys()) if hasattr(doc, 'metadata') and doc.metadata else 'None'}"
+            f"""No content found for document {i + 1}. Available metadata keys: 
+                    {list(doc.metadata.keys()) if hasattr(doc, 'metadata') and doc.metadata else 'None'}"""
         )
 
     result = join_separator.join(content_parts)
-    logger.debug(
-        f"Formatted {len(docs)} documents into {len(result)} characters of context"
-    )
+    logger.debug(f"Formatted {len(docs)} documents into {len(result)} characters of context")
 
     return result

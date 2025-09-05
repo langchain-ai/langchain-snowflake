@@ -95,9 +95,7 @@ class SnowflakeErrorHandler:
         error_message = f"Error: Failed to {operation} - {str(error)}"
 
         # Create usage metadata
-        usage_metadata = UsageMetadata(
-            input_tokens=input_tokens, output_tokens=0, total_tokens=input_tokens
-        )
+        usage_metadata = UsageMetadata(input_tokens=input_tokens, output_tokens=0, total_tokens=input_tokens)
 
         # Create AI message with error
         ai_message = AIMessage(content=error_message, usage_metadata=usage_metadata)

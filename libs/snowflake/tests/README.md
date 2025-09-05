@@ -40,6 +40,7 @@ The unit test suite contains **17 core unit tests** covering:
 ## Running Tests
 
 ### Run All Unit Tests
+
 ```bash
 make test
 # or
@@ -47,17 +48,20 @@ pytest tests/unit_tests/ --disable-socket --allow-unix-socket
 ```
 
 ### Run Specific Test Files
+
 ```bash
 pytest tests/unit_tests/test_chat_models.py -v
 pytest tests/unit_tests/test_tools.py -v
 ```
 
 ### Run with Coverage
+
 ```bash
 pytest tests/unit_tests/ --cov=langchain_snowflake --cov-report=html
 ```
 
 ### Run LangChain Standard Tests
+
 ```bash
 # First install langchain-tests
 pip install langchain-tests
@@ -76,6 +80,7 @@ pytest tests/unit_tests/ -v
 ## Test Configuration
 
 Tests are configured via `pyproject.toml`:
+
 - `pytest-socket` for network isolation
 - `pytest-asyncio` for async test support
 - Test markers for integration tests (not used in unit tests)
@@ -84,15 +89,32 @@ Tests are configured via `pyproject.toml`:
 ## Fixtures
 
 Shared test fixtures are defined in `conftest.py`:
+
 - `mock_snowflake_session`: Mock Snowflake session for all tests
 - `disable_network_calls`: Automatic network isolation
 
-## Integration Testing
+### Integration Tests (`tests/integration_tests/`)
 
-Integration tests are handled by the documentation notebooks in `docs/`:
+**NEW:** Integration tests have been reinstated and updated:
+
+1. **Compilation Tests** (`test_compile.py`) - 1 test
+   - Import compilation verification for CI
+
+2. **Retriever Tests** (`test_retrievers.py`) - Multiple tests
+   - SnowflakeCortexSearchRetriever functionality
+   - Authentication and connection testing
+   - Search and filtering capabilities
+   - Auto-formatting for RAG workflows
+
+**Test Modes:**
+
+- **Compilation-only**: Tests import and basic instantiation (no live credentials needed)
+- **Full integration**: Tests with live Snowflake connection (requires credentials)
+
+### Documentation Tests
+
+Documentation notebooks serve as additional integration tests:
+
 - `docs/getting_started.ipynb`
-- `docs/snowflake_workflows.ipynb`
+- `docs/snowflake_workflows.ipynb` 
 - `docs/advanced_patterns.ipynb`
-
-This approach ensures that integration tests demonstrate real-world usage patterns while unit tests provide fast feedback on code changes.
-

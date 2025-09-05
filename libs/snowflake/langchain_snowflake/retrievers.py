@@ -123,12 +123,8 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
 
     # Search parameters
     k: int = Field(default=4, description="Number of documents to retrieve")
-    search_columns: Optional[List[str]] = Field(
-        default=None, description="Columns to include in results"
-    )
-    filter_dict: Optional[Dict[str, Any]] = Field(
-        default=None, description="Search filters"
-    )
+    search_columns: Optional[List[str]] = Field(default=None, description="Columns to include in results")
+    filter_dict: Optional[Dict[str, Any]] = Field(default=None, description="Search filters")
 
     # RAG optimization parameters
     auto_format_for_rag: bool = Field(
@@ -141,7 +137,7 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
 
         arbitrary_types_allowed = True
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         """Initialize the retriever with proper session attribute."""
         # Call the parent initializer
         super().__init__(**kwargs)
@@ -176,17 +172,13 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
             # Keep original metadata for reference
             formatted_doc = Document(
                 page_content=formatted_content,
-                metadata=doc.metadata.copy()
-                if hasattr(doc, "metadata") and doc.metadata
-                else {},
+                metadata=(doc.metadata.copy() if hasattr(doc, "metadata") and doc.metadata else {}),
             )
 
             # Add formatting metadata
             if hasattr(formatted_doc, "metadata"):
                 formatted_doc.metadata["_formatted_for_rag"] = True
-                formatted_doc.metadata["_original_page_content"] = getattr(
-                    doc, "page_content", ""
-                )
+                formatted_doc.metadata["_original_page_content"] = getattr(doc, "page_content", "")
 
             formatted_docs.append(formatted_doc)
 
@@ -197,9 +189,7 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
         """Parse the fully qualified service name into database, schema, and service components."""
         parts = self.service_name.split(".")
         if len(parts) != 3:
-            raise ValueError(
-                f"Service name must be fully qualified (database.schema.service): {self.service_name}"
-            )
+            raise ValueError(f"Service name must be fully qualified (database.schema.service): {self.service_name}")
         return parts[0], parts[1], parts[2]
 
     # _get_rest_api_headers() functionality replaced by SnowflakeAuthUtils.get_rest_api_headers()
@@ -216,9 +206,7 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
 
         return payload
 
-    def _build_cortex_search_url(
-        self, session: Session, database: str, schema: str, service: str
-    ) -> str:
+    def _build_cortex_search_url(self, session: Session, database: str, schema: str, service: str) -> str:
         """Build the correct Cortex Search REST API URL.
 
         Based on Snowflake documentation:
@@ -243,7 +231,10 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
                     base_url = f"https://{account}.snowflakecomputing.com"
 
             # Build Cortex Search specific endpoint (NOT Cortex Complete)
-            endpoint = f"/api/v2/databases/{quote(database)}/schemas/{quote(schema)}/cortex-search-services/{quote(service)}:query"
+            endpoint = (
+                f"/api/v2/databases/{quote(database)}/schemas/{quote(schema)}"
+                f"/cortex-search-services/{quote(service)}:query"
+            )
             url = base_url + endpoint
 
             logger.debug(f"Built Cortex Search URL: {url}")
@@ -276,9 +267,7 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
             timeout = getattr(self, "request_timeout", 30)
             verify_ssl = getattr(self, "verify_ssl", True)
 
-            response = requests.post(
-                url, json=payload, headers=headers, timeout=timeout, verify=verify_ssl
-            )
+            response = requests.post(url, json=payload, headers=headers, timeout=timeout, verify=verify_ssl)
             response.raise_for_status()
 
             data = response.json()

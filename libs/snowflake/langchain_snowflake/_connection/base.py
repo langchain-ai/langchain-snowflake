@@ -23,40 +23,26 @@ class SnowflakeConnectionMixin:
     across the langchain-snowflake package.
     """
 
-    # Shared Pydantic field definitions - eliminates 42+ lines of duplication
-    session: Any = Field(
-        default=None, exclude=True, description="Active Snowflake session"
-    )
-    account: Optional[str] = Field(
-        default=None, description="Snowflake account identifier"
-    )
+    # Shared Pydantic field definitions
+    session: Any = Field(default=None, exclude=True, description="Active Snowflake session")
+    account: Optional[str] = Field(default=None, description="Snowflake account identifier")
     user: Optional[str] = Field(default=None, description="Snowflake username")
-    password: Optional[SecretStr] = Field(
-        default=None, description="Snowflake password"
-    )
-    token: Optional[str] = Field(
-        default=None, description="OAuth token for authentication"
-    )
-    private_key_path: Optional[str] = Field(
-        default=None, description="Path to private key file"
-    )
-    private_key_passphrase: Optional[str] = Field(
-        default=None, description="Private key passphrase"
-    )
+    password: Optional[SecretStr] = Field(default=None, description="Snowflake password")
+    token: Optional[str] = Field(default=None, description="OAuth token for authentication")
+    private_key_path: Optional[str] = Field(default=None, description="Path to private key file")
+    private_key_passphrase: Optional[str] = Field(default=None, description="Private key passphrase")
     warehouse: Optional[str] = Field(default=None, description="Snowflake warehouse")
     database: Optional[str] = Field(default=None, description="Snowflake database")
     schema: Optional[str] = Field(default=None, description="Snowflake schema")
 
     # Timeout configuration - follows Snowflake parameter hierarchy
-    request_timeout: int = Field(
-        default=30, description="HTTP request timeout in seconds (default: 30)"
-    )
+    request_timeout: int = Field(default=30, description="HTTP request timeout in seconds (default: 30)")
     respect_session_timeout: bool = Field(
         default=True,
         description="Whether to respect session STATEMENT_TIMEOUT_IN_SECONDS parameter (default: True)",
     )
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         """Initialize the mixin with session caching."""
         super().__init__(**kwargs)
         self._session = None
@@ -73,7 +59,7 @@ class SnowflakeConnectionMixin:
         Raises:
             ValueError: If session creation fails
         """
-        return SnowflakeSessionManager.get_or_create_session(
+        session = SnowflakeSessionManager.get_or_create_session(
             existing_session=self.session,
             cached_session=self._session,
             account=self.account,
@@ -86,6 +72,10 @@ class SnowflakeConnectionMixin:
             database=self.database,
             schema=self.schema,
         )
+
+        # Cache the session for reuse
+        self._session = session
+        return session
 
     def _build_connection_config(self) -> dict:
         """Build connection configuration dictionary from instance attributes.
@@ -152,9 +142,7 @@ class SnowflakeConnectionMixin:
 
             if result and len(result) > 0:
                 token_count = result[0]["TOKEN_COUNT"]
-                return (
-                    int(token_count) if token_count is not None else len(text.split())
-                )
+                return int(token_count) if token_count is not None else len(text.split())
             else:
                 # Fallback to word count estimation
                 return len(text.split())
@@ -164,7 +152,5 @@ class SnowflakeConnectionMixin:
             import logging
 
             logger = logging.getLogger(__name__)
-            logger.debug(
-                f"Could not use CORTEX.COUNT_TOKENS, falling back to word count: {e}"
-            )
+            logger.debug(f"Could not use CORTEX.COUNT_TOKENS, falling back to word count: {e}")
             return len(text.split())

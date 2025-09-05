@@ -118,9 +118,7 @@ class SnowflakeStructuredOutput:
             def dict(self, **kwargs):
                 """Override dict to include structured output metadata."""
                 result = super().dict(**kwargs)
-                result["ls_structured_output_format"] = (
-                    self._ls_structured_output_format_dict
-                )
+                result["ls_structured_output_format"] = self._ls_structured_output_format_dict
                 return result
 
             def invoke(self, input, config=None, **kwargs):
@@ -228,14 +226,10 @@ Provide only a valid JSON object that conforms to the schema.
 
                     # Remove markdown formatting if present
                     if "```json" in json_content:
-                        json_content = (
-                            json_content.split("```json")[1].split("```")[0].strip()
-                        )
+                        json_content = json_content.split("```json")[1].split("```")[0].strip()
                     elif "```" in json_content:
                         # Look for any code block
-                        json_content = (
-                            json_content.split("```")[1].split("```")[0].strip()
-                        )
+                        json_content = json_content.split("```")[1].split("```")[0].strip()
 
                     # Try to find JSON object pattern
                     json_match = re.search(r"\{.*\}", json_content, re.DOTALL)
@@ -270,9 +264,7 @@ Return ONLY a valid JSON object that matches the required format.
                         json_content = format_response.content.strip()
 
                         if "```json" in json_content:
-                            json_content = (
-                                json_content.split("```json")[1].split("```")[0].strip()
-                            )
+                            json_content = json_content.split("```json")[1].split("```")[0].strip()
 
                         parsed_data = json.loads(json_content)
 
@@ -281,14 +273,12 @@ Return ONLY a valid JSON object that matches the required format.
                         else:
                             return parsed_data
 
-                    except:
+                    except Exception:
                         # Final fallback - return error with raw content
                         return {
                             "error": f"Could not parse response into {self._ls_structured_output_format} format",
                             "raw": response_content,
-                            "schema": self._schema_dict
-                            if hasattr(self, "_schema_dict")
-                            else None,
+                            "schema": (self._schema_dict if hasattr(self, "_schema_dict") else None),
                         }
 
         # Return the structured output wrapper

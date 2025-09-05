@@ -30,13 +30,9 @@ class SnowflakeUtils:
 
             for message in messages:
                 if isinstance(message, SystemMessage):
-                    formatted_messages.append(
-                        {"role": "system", "content": message.content}
-                    )
+                    formatted_messages.append({"role": "system", "content": message.content})
                 elif isinstance(message, HumanMessage):
-                    formatted_messages.append(
-                        {"role": "user", "content": message.content}
-                    )
+                    formatted_messages.append({"role": "user", "content": message.content})
                 elif isinstance(message, AIMessage):
                     msg_dict = {"role": "assistant", "content": message.content}
 
@@ -44,9 +40,7 @@ class SnowflakeUtils:
                     if hasattr(message, "tool_calls") and message.tool_calls:
                         content_list = []
                         if message.content:
-                            content_list.append(
-                                {"type": "text", "text": message.content}
-                            )
+                            content_list.append({"type": "text", "text": message.content})
 
                         for tool_call in message.tool_calls:
                             content_list.append(
@@ -56,7 +50,7 @@ class SnowflakeUtils:
                                         "tool_use_id": tool_call.get("id", ""),
                                         "name": tool_call.get("name", ""),
                                         "input": tool_call.get("args", {}),
-                                    },
+                                    },  # type: ignore[dict-item]
                                 }
                             )
 
@@ -66,9 +60,7 @@ class SnowflakeUtils:
                     formatted_messages.append(msg_dict)
                 else:
                     # Default handling for other message types
-                    formatted_messages.append(
-                        {"role": "user", "content": str(message.content)}
-                    )
+                    formatted_messages.append({"role": "user", "content": str(message.content)})
 
             return formatted_messages
         else:
@@ -241,15 +233,11 @@ class SnowflakeUtils:
             if result and len(result) > 0:
                 return int(result[0]["TOKEN_COUNT"])
             else:
-                logger.warning(
-                    "COUNT_TOKENS query returned no results, falling back to word count"
-                )
+                logger.warning("COUNT_TOKENS query returned no results, falling back to word count")
                 return len(combined_text.split()) * 1.3  # Fallback estimate
 
         except Exception as e:
-            logger.warning(
-                f"Error using SNOWFLAKE.CORTEX.COUNT_TOKENS: {e}. Falling back to word count estimation"
-            )
+            logger.warning(f"Error using SNOWFLAKE.CORTEX.COUNT_TOKENS: {e}. Falling back to word count estimation")
             # Fallback to simple word counting
             total_words = 0
             for msg in messages:
@@ -350,9 +338,7 @@ class SnowflakeMetadataFactory:
             return UsageMetadata(
                 input_tokens=usage_data.get("prompt_tokens", input_tokens),
                 output_tokens=usage_data.get("completion_tokens", output_tokens),
-                total_tokens=usage_data.get(
-                    "total_tokens", total_tokens or (input_tokens + output_tokens)
-                ),
+                total_tokens=usage_data.get("total_tokens", total_tokens or (input_tokens + output_tokens)),
             )
         else:
             return UsageMetadata(
@@ -362,9 +348,7 @@ class SnowflakeMetadataFactory:
             )
 
     @staticmethod
-    def create_response_metadata(
-        model: str, finish_reason: str = "stop", **extra_metadata
-    ) -> Dict[str, Any]:
+    def create_response_metadata(model: str, finish_reason: str = "stop", **extra_metadata) -> Dict[str, Any]:
         """Create response metadata with consistent structure.
 
         Args:
@@ -441,9 +425,7 @@ class SnowflakeErrorFactory:
         )
 
         # Create response metadata
-        response_metadata = SnowflakeMetadataFactory.create_response_metadata(
-            model=model, finish_reason="error"
-        )
+        response_metadata = SnowflakeMetadataFactory.create_response_metadata(model=model, finish_reason="error")
 
         # Create error message
         message = AIMessage(

@@ -28,9 +28,7 @@ class CortexSentimentTool(BaseTool, SnowflakeConnectionMixin):
     """Analyze sentiment using Snowflake Cortex SENTIMENT function."""
 
     name: str = "cortex_sentiment"
-    description: str = (
-        "Analyze sentiment of text using Snowflake Cortex SENTIMENT function"
-    )
+    description: str = "Analyze sentiment of text using Snowflake Cortex SENTIMENT function"
     args_schema: Type[BaseModel] = CortexSentimentInput
 
     def __init__(self, **kwargs):
@@ -41,9 +39,7 @@ class CortexSentimentTool(BaseTool, SnowflakeConnectionMixin):
         if not hasattr(self, "_session"):
             self._session = None
 
-    def _run(
-        self, text: str, *, run_manager: Optional[CallbackManagerForToolRun] = None
-    ) -> str:
+    def _run(self, text: str, *, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
         """Analyze sentiment of the given text."""
         session = self._get_session()
 
@@ -78,13 +74,9 @@ class CortexSentimentTool(BaseTool, SnowflakeConnectionMixin):
                 return json.dumps({"error": "No sentiment analysis result"})
 
         except Exception as e:
-            return SnowflakeToolErrorHandler.handle_tool_error(
-                e, "CortexSentimentTool", "analyze sentiment"
-            )
+            return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexSentimentTool", "analyze sentiment")
 
-    async def _arun(
-        self, text: str, *, run_manager: Optional[AsyncCallbackManagerForToolRun] = None
-    ) -> str:
+    async def _arun(self, text: str, *, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
         """Async analyze sentiment of the given text using native Snowflake async."""
         session = self._get_session()
 
@@ -124,9 +116,7 @@ class CortexSentimentTool(BaseTool, SnowflakeConnectionMixin):
                 return json.dumps({"error": "No sentiment analysis result"})
 
         except Exception as e:
-            return SnowflakeToolErrorHandler.handle_tool_error(
-                e, "CortexSentimentTool", "analyze sentiment async"
-            )
+            return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexSentimentTool", "analyze sentiment async")
 
 
 class CortexSummarizerTool(BaseTool, SnowflakeConnectionMixin):
@@ -144,9 +134,7 @@ class CortexSummarizerTool(BaseTool, SnowflakeConnectionMixin):
         if not hasattr(self, "_session"):
             self._session = None
 
-    def _run(
-        self, text: str, *, run_manager: Optional[CallbackManagerForToolRun] = None
-    ) -> str:
+    def _run(self, text: str, *, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
         """Summarize the given text."""
         session = self._get_session()
 
@@ -163,9 +151,7 @@ class CortexSummarizerTool(BaseTool, SnowflakeConnectionMixin):
                 summary = result[0]["SUMMARY"]
                 return json.dumps(
                     {
-                        "original_text": text[:100] + "..."
-                        if len(text) > 100
-                        else text,
+                        "original_text": (text[:100] + "..." if len(text) > 100 else text),
                         "summary": summary,
                         "original_length": len(text),
                         "summary_length": len(summary) if summary else 0,
@@ -175,13 +161,9 @@ class CortexSummarizerTool(BaseTool, SnowflakeConnectionMixin):
                 return json.dumps({"error": "No summary generated"})
 
         except Exception as e:
-            return SnowflakeToolErrorHandler.handle_tool_error(
-                e, "CortexSummarizerTool", "summarize text"
-            )
+            return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexSummarizerTool", "summarize text")
 
-    async def _arun(
-        self, text: str, *, run_manager: Optional[AsyncCallbackManagerForToolRun] = None
-    ) -> str:
+    async def _arun(self, text: str, *, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
         """Async summarize the given text using native Snowflake async."""
         session = self._get_session()
 
@@ -203,9 +185,7 @@ class CortexSummarizerTool(BaseTool, SnowflakeConnectionMixin):
                 summary = result[0]["SUMMARY"]
                 return json.dumps(
                     {
-                        "original_text": text[:100] + "..."
-                        if len(text) > 100
-                        else text,
+                        "original_text": (text[:100] + "..." if len(text) > 100 else text),
                         "summary": summary,
                         "original_length": len(text),
                         "summary_length": len(summary) if summary else 0,
@@ -215,9 +195,7 @@ class CortexSummarizerTool(BaseTool, SnowflakeConnectionMixin):
                 return json.dumps({"error": "No summary generated"})
 
         except Exception as e:
-            return SnowflakeToolErrorHandler.handle_tool_error(
-                e, "CortexSummarizerTool", "summarize text async"
-            )
+            return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexSummarizerTool", "summarize text async")
 
 
 class CortexTranslatorTool(BaseTool, SnowflakeConnectionMixin):
@@ -281,9 +259,7 @@ class CortexTranslatorTool(BaseTool, SnowflakeConnectionMixin):
                 return json.dumps({"error": "No translation generated"})
 
         except Exception as e:
-            return SnowflakeToolErrorHandler.handle_tool_error(
-                e, "CortexTranslatorTool", "translate text"
-            )
+            return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexTranslatorTool", "translate text")
 
     async def _arun(
         self,
@@ -335,18 +311,14 @@ class CortexTranslatorTool(BaseTool, SnowflakeConnectionMixin):
                 return json.dumps({"error": "No translation generated"})
 
         except Exception as e:
-            return SnowflakeToolErrorHandler.handle_tool_error(
-                e, "CortexTranslatorTool", "translate text async"
-            )
+            return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexTranslatorTool", "translate text async")
 
 
 class CortexCompleteTool(BaseTool, SnowflakeConnectionMixin):
     """Generate text completions using Snowflake Cortex COMPLETE function."""
 
     name: str = "cortex_complete"
-    description: str = (
-        "Generate text completions using Snowflake Cortex COMPLETE function"
-    )
+    description: str = "Generate text completions using Snowflake Cortex COMPLETE function"
     args_schema: Type[BaseModel] = CortexCompleteInput
 
     def __init__(self, **kwargs):
@@ -379,16 +351,12 @@ class CortexCompleteTool(BaseTool, SnowflakeConnectionMixin):
 
             if result:
                 completion = result[0]["COMPLETION"]
-                return json.dumps(
-                    {"prompt": prompt, "completion": completion, "model": model}
-                )
+                return json.dumps({"prompt": prompt, "completion": completion, "model": model})
             else:
                 return json.dumps({"error": "No completion generated"})
 
         except Exception as e:
-            return SnowflakeToolErrorHandler.handle_tool_error(
-                e, "CortexCompleteTool", "generate completion"
-            )
+            return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexCompleteTool", "generate completion")
 
     async def _arun(
         self,
@@ -417,13 +385,9 @@ class CortexCompleteTool(BaseTool, SnowflakeConnectionMixin):
 
             if result:
                 completion = result[0]["COMPLETION"]
-                return json.dumps(
-                    {"prompt": prompt, "completion": completion, "model": model}
-                )
+                return json.dumps({"prompt": prompt, "completion": completion, "model": model})
             else:
                 return json.dumps({"error": "No completion generated"})
 
         except Exception as e:
-            return SnowflakeToolErrorHandler.handle_tool_error(
-                e, "CortexCompleteTool", "generate completion async"
-            )
+            return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexCompleteTool", "generate completion async")

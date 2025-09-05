@@ -67,9 +67,7 @@ class SnowflakeQueryTool(BaseTool, SnowflakeConnectionMixin):
         if not hasattr(self, "_session"):
             self._session = None
 
-    def _run(
-        self, query: str, *, run_manager: Optional[CallbackManagerForToolRun] = None
-    ) -> str:
+    def _run(self, query: str, *, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
         """Execute SQL query on Snowflake."""
         session = self._get_session()
 

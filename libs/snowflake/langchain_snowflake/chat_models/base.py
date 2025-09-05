@@ -213,9 +213,6 @@ class ChatSnowflake(
     ls_structured_output_format: Optional[str] = Field(default=None)
     """Structured output format for LangChain compatibility."""
 
-    # Class properties for LangChain compatibility
-    _llm_type: str = "snowflake-cortex"
-
     @property
     def _ls_structured_output_format(self) -> Optional[str]:
         """Return the structured output format for LangChain compatibility."""
@@ -295,9 +292,7 @@ class ChatSnowflake(
         try:
             # Route based on tool usage
             if self._should_use_rest_api():
-                return self._generate_via_rest_api(
-                    messages, stop, run_manager, **kwargs
-                )
+                return self._generate_via_rest_api(messages, stop, run_manager, **kwargs)
             else:
                 return self._generate_via_sql(messages, stop, run_manager, **kwargs)
         except Exception as e:
@@ -351,22 +346,14 @@ class ChatSnowflake(
                 if isinstance(formatted_prompt, str):
                     # Use parameterized query for simple format too
                     sql = "SELECT SNOWFLAKE.CORTEX.COMPLETE(?, ?) as response"
-                    result = session.sql(
-                        sql, params=[self.model, formatted_prompt]
-                    ).collect()
+                    result = session.sql(sql, params=[self.model, formatted_prompt]).collect()
                 else:
                     # Convert to string for simple format
                     prompt_text = " ".join(
-                        [
-                            msg.get("content", "")
-                            for msg in formatted_prompt
-                            if isinstance(msg, dict)
-                        ]
+                        [msg.get("content", "") for msg in formatted_prompt if isinstance(msg, dict)]
                     )
                     sql = "SELECT SNOWFLAKE.CORTEX.COMPLETE(?, ?) as response"
-                    result = session.sql(
-                        sql, params=[self.model, prompt_text]
-                    ).collect()
+                    result = session.sql(sql, params=[self.model, prompt_text]).collect()
 
             if not result:
                 raise ValueError("No response from Cortex Complete")
@@ -384,12 +371,8 @@ class ChatSnowflake(
 
                     message = AIMessage(
                         content=content,
-                        usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(
-                            usage_data
-                        ),
-                        response_metadata=SnowflakeMetadataFactory.create_response_metadata(
-                            self.model
-                        ),
+                        usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(usage_data),
+                        response_metadata=SnowflakeMetadataFactory.create_response_metadata(self.model),
                     )
                 except json.JSONDecodeError:
                     # Fallback to treating as plain text using shared factories
@@ -401,9 +384,7 @@ class ChatSnowflake(
                         usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(
                             input_tokens=input_tokens, output_tokens=output_tokens
                         ),
-                        response_metadata=SnowflakeMetadataFactory.create_response_metadata(
-                            self.model
-                        ),
+                        response_metadata=SnowflakeMetadataFactory.create_response_metadata(self.model),
                     )
             else:
                 # Simple string response using shared factories
@@ -415,9 +396,7 @@ class ChatSnowflake(
                     usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(
                         input_tokens=input_tokens, output_tokens=output_tokens
                     ),
-                    response_metadata=SnowflakeMetadataFactory.create_response_metadata(
-                        self.model
-                    ),
+                    response_metadata=SnowflakeMetadataFactory.create_response_metadata(self.model),
                 )
 
             generation = ChatGeneration(message=message)
@@ -470,22 +449,14 @@ class ChatSnowflake(
                 if isinstance(formatted_messages, str):
                     # Use parameterized query for simple format too
                     sql = "SELECT SNOWFLAKE.CORTEX.COMPLETE(?, ?) as response"
-                    async_job = session.sql(
-                        sql, params=[self.model, formatted_messages]
-                    ).collect_nowait()
+                    async_job = session.sql(sql, params=[self.model, formatted_messages]).collect_nowait()
                 else:
                     # Convert to string for simple format
                     prompt_text = " ".join(
-                        [
-                            msg.get("content", "")
-                            for msg in formatted_messages
-                            if isinstance(msg, dict)
-                        ]
+                        [msg.get("content", "") for msg in formatted_messages if isinstance(msg, dict)]
                     )
                     sql = "SELECT SNOWFLAKE.CORTEX.COMPLETE(?, ?) as response"
-                    async_job = session.sql(
-                        sql, params=[self.model, prompt_text]
-                    ).collect_nowait()
+                    async_job = session.sql(sql, params=[self.model, prompt_text]).collect_nowait()
 
             # Wait for completion using thread pool only for result retrieval
             result = await asyncio.to_thread(async_job.result)
@@ -507,12 +478,8 @@ class ChatSnowflake(
 
                     ai_message = AIMessage(
                         content=content,
-                        usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(
-                            usage_data
-                        ),
-                        response_metadata=SnowflakeMetadataFactory.create_response_metadata(
-                            self.model
-                        ),
+                        usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(usage_data),
+                        response_metadata=SnowflakeMetadataFactory.create_response_metadata(self.model),
                     )
                 except json.JSONDecodeError:
                     # Fallback to treating as plain text using shared factories
@@ -526,9 +493,7 @@ class ChatSnowflake(
                         usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(
                             input_tokens=input_tokens, output_tokens=output_tokens
                         ),
-                        response_metadata=SnowflakeMetadataFactory.create_response_metadata(
-                            self.model
-                        ),
+                        response_metadata=SnowflakeMetadataFactory.create_response_metadata(self.model),
                     )
             else:
                 # Simple string response using shared factories
@@ -542,18 +507,14 @@ class ChatSnowflake(
                     usage_metadata=SnowflakeMetadataFactory.create_usage_metadata(
                         input_tokens=input_tokens, output_tokens=output_tokens
                     ),
-                    response_metadata=SnowflakeMetadataFactory.create_response_metadata(
-                        self.model
-                    ),
+                    response_metadata=SnowflakeMetadataFactory.create_response_metadata(self.model),
                 )
 
             # Create generation object
             generation = ChatGeneration(message=ai_message)
 
             # Create response metadata
-            response_metadata = SnowflakeMetadataFactory.create_response_metadata(
-                model=self.model
-            )
+            response_metadata = SnowflakeMetadataFactory.create_response_metadata(model=self.model)
 
             return ChatResult(generations=[generation], llm_output=response_metadata)
 
@@ -648,14 +609,10 @@ class ChatSnowflake(
             # Determine whether to use SQL or REST API based on tool requirements
             if self._should_use_rest_api():
                 # Use native async REST API with aiohttp
-                return await self._generate_via_rest_api_async(
-                    messages, stop, run_manager, **kwargs
-                )
+                return await self._generate_via_rest_api_async(messages, stop, run_manager, **kwargs)
             else:
                 # Use native Snowflake async for SQL execution
-                return await self._generate_via_sql_async(
-                    messages, stop, run_manager, **kwargs
-                )
+                return await self._generate_via_sql_async(messages, stop, run_manager, **kwargs)
 
         except Exception as e:
             logger.error(f"Error in async generation: {e}")
