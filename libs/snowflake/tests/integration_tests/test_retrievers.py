@@ -78,9 +78,7 @@ def test_snowflake_cortex_search_invoke_no_columns_or_filter() -> None:
     assert len(documents) > 0
     for doc in documents:
         assert isinstance(doc, Document)
-        assert (
-            doc.page_content or len(doc.metadata) > 0
-        )  # Should have content or metadata
+        assert doc.page_content or len(doc.metadata) > 0  # Should have content or metadata
 
 
 @pytest.mark.requires("snowflake.core")

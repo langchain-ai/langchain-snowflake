@@ -43,9 +43,7 @@ class TestSnowflakeConnectionMixin:
         assert mixin.warehouse == "test-warehouse"
         assert mixin._session is None
 
-    @patch(
-        "langchain_snowflake._connection.session_manager.SnowflakeSessionManager.get_or_create_session"
-    )
+    @patch("langchain_snowflake._connection.session_manager.SnowflakeSessionManager.get_or_create_session")
     def test_get_session(self, mock_get_or_create):
         """Test _get_session method."""
         mock_session = MockSession()
@@ -80,9 +78,7 @@ class TestSnowflakeSessionManager:
         """Test session creation with existing session."""
         existing_session = MockSession()
 
-        result = SnowflakeSessionManager.get_or_create_session(
-            existing_session=existing_session
-        )
+        result = SnowflakeSessionManager.get_or_create_session(existing_session=existing_session)
 
         assert result == existing_session
         # Should not create new session

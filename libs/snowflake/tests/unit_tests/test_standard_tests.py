@@ -26,9 +26,7 @@ class MockSession:
         return mock_result
 
 
-@pytest.mark.skipif(
-    not LANGCHAIN_TESTS_AVAILABLE, reason="langchain_tests package not installed"
-)
+@pytest.mark.skipif(not LANGCHAIN_TESTS_AVAILABLE, reason="langchain_tests package not installed")
 class TestChatSnowflakeUnit(ChatModelUnitTests):
     """Standard unit tests for ChatSnowflake."""
 
@@ -73,9 +71,7 @@ class TestChatSnowflakeUnit(ChatModelUnitTests):
 def test_langchain_tests_placeholder():
     """Placeholder test that always passes when langchain_tests is not available."""
     if not LANGCHAIN_TESTS_AVAILABLE:
-        pytest.skip(
-            "langchain_tests package not installed - install with: pip install langchain-tests"
-        )
+        pytest.skip("langchain_tests package not installed - install with: pip install langchain-tests")
     else:
         # If langchain_tests is available, the real tests above will run
         pass

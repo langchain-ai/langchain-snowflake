@@ -39,9 +39,7 @@ class TestCortexCompleteTool:
         assert "complete" in tool.description.lower()
         assert tool._session is None  # Initially None, set on first use
 
-    @patch(
-        "langchain_snowflake.tools.cortex_functions.SnowflakeConnectionMixin._get_session"
-    )
+    @patch("langchain_snowflake.tools.cortex_functions.SnowflakeConnectionMixin._get_session")
     def test_cortex_complete_tool_run(self, mock_get_session, mock_session):
         """Test CortexCompleteTool._run method."""
         mock_get_session.return_value = mock_session

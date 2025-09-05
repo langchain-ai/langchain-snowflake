@@ -132,6 +132,9 @@ site/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+.mypy_cache_test/
+.mypy_cache_test_*
+.mypy_cache_test_*/*
 
 # Pyre type checker
 .pyre/

@@ -39,9 +39,7 @@ class TestChatSnowflakeMain:
     @patch("langchain_snowflake.chat_models.base.Session")
     def test_initialization_with_params(self, mock_session_class):
         """Test ChatSnowflake initializes with connection parameters."""
-        llm = ChatSnowflake(
-            model="claude-3-5-sonnet", account="test-account", user="test-user"
-        )
+        llm = ChatSnowflake(model="claude-3-5-sonnet", account="test-account", user="test-user")
         assert llm.model == "claude-3-5-sonnet"
         assert llm.account == "test-account"
         assert llm.user == "test-user"
@@ -54,13 +52,9 @@ class TestSnowflakeAuth:
     def test_session_creation_with_password(self, mock_session_class):
         """Test session creation with password authentication."""
         mock_session_instance = Mock()
-        mock_session_class.builder.configs.return_value.create.return_value = (
-            mock_session_instance
-        )
+        mock_session_class.builder.configs.return_value.create.return_value = mock_session_instance
 
-        llm = ChatSnowflake(
-            account="test-account", user="test-user", password="test-password"
-        )
+        llm = ChatSnowflake(account="test-account", user="test-user", password="test-password")
 
         # Trigger session creation
         session = llm._get_session()
@@ -70,13 +64,9 @@ class TestSnowflakeAuth:
     def test_session_creation_with_token(self, mock_session_class):
         """Test session creation with token authentication."""
         mock_session_instance = Mock()
-        mock_session_class.builder.configs.return_value.create.return_value = (
-            mock_session_instance
-        )
+        mock_session_class.builder.configs.return_value.create.return_value = mock_session_instance
 
-        llm = ChatSnowflake(
-            account="test-account", user="test-user", token="test-token"
-        )
+        llm = ChatSnowflake(account="test-account", user="test-user", token="test-token")
 
         # Trigger session creation
         session = llm._get_session()
