@@ -5,15 +5,19 @@ all: help
 
 # Define a variable for the test file path.
 TEST_FILE ?= tests/unit_tests/
-
 integration_test integration_tests: TEST_FILE=tests/integration_tests/
 
-test tests integration_test integration_tests:
-	poetry run pytest $(TEST_FILE)
+
+# unit tests are run with the --disable-socket flag to prevent network calls
+test tests:
+	poetry run pytest --disable-socket --allow-unix-socket $(TEST_FILE)
 
 test_watch:
 	poetry run ptw --snapshot-update --now . -- -vv $(TEST_FILE)
 
+# integration tests are run without the --disable-socket flag to allow network calls
+integration_test integration_tests:
+	poetry run pytest $(TEST_FILE)
 
 ######################
 # LINTING AND FORMATTING

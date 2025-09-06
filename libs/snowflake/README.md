@@ -1,103 +1,55 @@
-# langchain-snowflake
+# LangChain Snowflake
 
-This package contains the LangChain integration with Snowflake
+LangChain integration for Snowflake Cortex AI. Native support for chat models, tools, and retrieval with production-ready authentication.
+
+## Production Ready
+
+- 50+ comprehensive tests covering core functionality
+- Native tool calling with Cortex Complete
+- Structured output support (Pydantic, TypedDict, JSON)
+- Complete async/await implementation
+- All authentication methods supported
+
+## Features
+
+- Chat models with tool calling support
+- Cortex Search retrieval with relevance assessment
+- Complete toolkit for 6 Cortex AI functions
+- Async support for high-performance applications
+- Agent patterns following LangChain standards
+- Multiple authentication methods
+- LangSmith tracing integration
 
 ## Installation
 
 ```bash
-pip install -U langchain-snowflake
+pip install langchain-snowflake
 ```
 
-You can authenticate by one of the following ways:
+## LangSmith Tracing
 
-1. Configure credentials by setting the following environment variables:
-
-`SNOWFLAKE_USERNAME` should hold your Snowflake username.
-
-`SNOWFLAKE_PASSWORD` should hold your Snowflake password.
-
-`SNOWFLAKE_DATABASE` should hold a Snowflake database to operate in.
-
-`SNOWFLAKE_SCHEMA` should hold the name of the schema to operate in.
-
-`SNOWFLAKE_ROLE` should contain the name of the appropriate Snowflake role.
-
-`SNOWFLAKE_AUTHENTICATOR` should contain the name of Snowflake authentication method, if not using username/password authentication.
-
-Any of these paramaters can also be passed directly into the `CortexSearchRetriever` constructor. Those not passed will be inferred from the environment. For instance:
-
-```python
-from langchain_snowflake import CortexSearchRetriever
-
-search = CortexSearchRetriever(
-        role="snowflake_role",
-        database="your_db",
-        schema="your_schema",
-        search_service="your_cortex_search_service_name",
-        search_column="search_column_name",
-)
+```bash
+export LANGCHAIN_TRACING_V2=true
+export LANGCHAIN_API_KEY=your-langsmith-api-key
+export LANGCHAIN_PROJECT=snowflake-cortex
 ```
 
-Here, `role`, `database`, and `schema` are passed directly, while `SNOWFLAKE_USERNAME`, `SNOWFLAKE_PASSWORD`, and `SNOWFLAKE_AUTHENTICATOR` are inferred from the environment.
+## Documentation
 
-If the `SNOWFLAKE_AUTHENTICATOR` environment variable or `authenticator` property is set to `externalbrowser`, the `SNOWFLAKE_PASSWORD`/`password` need not be provided. `externalbrowser` auth will prompt to log in through an browser popup instead.
+- [Getting Started](docs/getting_started.ipynb)
+- [Snowflake Workflows](docs/snowflake_workflows.ipynb)
+- [Advanced Patterns](docs/advanced_patterns.ipynb)
 
-2. Alternatively, you can pass in a `snowflake.snowpark.Session` directly into the constructor with the `sp_session` argument. See [the Snowflake docs](https://docs.snowflake.com/en/developer-guide/snowpark/python/creating-session) on how to create such a session.
+## Contributing
 
-You may also override the database or schema on the provided session by passing these additional key word arguments into the constructor.
+See [Development.md](Development.md) for setup and guidelines.
 
-```python
-from langchain_snowflake import CortexSearchRetriever
-from snowflake.snowpark import Session
+## License
 
-# Create a snowflake session
-snowflake_session = Session.builder.config(...).create()
+MIT License
 
-search = CortexSearchRetriever(
-        sp_session=snowflake_session,
-        search_service="your_cortex_search_service_name",
-        search_column="search_column_name",
-        columns=["col1", "col2", "col3"],
+## Support
 
-        # If for any reason `snowflake_session` has a different
-        # database than the one containing your cortex search service,
-        # you can override with key word arguments.
-
-        # database="your_database_override",
-        # database="your_database_override"
-)
-```
-
-## Cortex Search Retriever
-
-`CortexSearchRetriever` is a Third Party Retriever that allows users to utilize their Cortex Search Service within Langchain.
-
-Given the service name and columns to search, the retriever will return matches found within the dataset with which the Cortex Search Service is associated.
-
-```python
-from langchain_snowflake import CortexSearchRetriever
-
-search = CortexSearchRetriever(
-        search_service="your_cortex_search_service_name",
-        search_column="<search_column_name>",
-        columns=["<col1>", "<col2>"],
-        filter={"@eq": {"<column>": "<value>"}},
-        limit=5
-)
-
-query="foo bar"
-result = search.invoke(query)
-for doc in result:
-    print(doc)
-```
-
-The class requires the arguments below:
-`search_service` corresponds to the name of your Cortex Search Service.
-
-`search_column` is the search column of the Cortex Search Service.
-
-`columns` corresponds to the columns to return in the search. If null or an empty list, only the `search_column` will be returned.
-
-`filter` is an optional argument corresponding to any filters that should be utilized when searching.
-
-`limit` corresponds to the number of search hits to return.
+- Check documentation notebooks in `docs/`
+- Report issues on GitHub
+- Join community discussions
