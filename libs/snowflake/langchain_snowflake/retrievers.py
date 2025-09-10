@@ -50,6 +50,12 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
             Columns to return in search results
         filter_dict: Optional[Dict[str, Any]]
             Filter criteria for search results
+        content_field: str
+            Metadata field containing the actual content (default: "TRANSCRIPT_TEXT")
+        join_separator: str
+            String to join multiple documents (default: "\\n\\n")
+        fallback_to_page_content: bool
+            Fall back to page_content when metadata field is empty (default: True)
 
     Instantiate:
         .. code-block:: python
@@ -71,6 +77,16 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
                 password="your-password",
                 warehouse="your-warehouse",
                 k=3
+            )
+
+            # Using custom content field (e.g., for datasets that store content in "CHUNK")
+            retriever_custom = SnowflakeCortexSearchRetriever(
+                service_name="mydb.myschema.my_search_service",
+                session=session,
+                k=5,
+                content_field="CHUNK",  # Extract from metadata["CHUNK"] instead of "TRANSCRIPT_TEXT"
+                join_separator="\\n---\\n",  # Custom separator
+                fallback_to_page_content=True
             )
 
     Usage:
@@ -129,7 +145,21 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
     # RAG optimization parameters
     auto_format_for_rag: bool = Field(
         default=True,
-        description="Automatically format documents for RAG by extracting from TRANSCRIPT_TEXT metadata",
+        description="Automatically format documents for RAG by extracting from metadata",
+    )
+
+    # Document formatting parameters (configurable alternatives to hardcoded defaults)
+    content_field: str = Field(
+        default="TRANSCRIPT_TEXT",
+        description="Metadata field containing the actual content to extract into page_content",
+    )
+    join_separator: str = Field(
+        default="\n\n",
+        description="String to join multiple documents when formatting",
+    )
+    fallback_to_page_content: bool = Field(
+        default=True,
+        description="If True, fall back to page_content when metadata field is empty",
     )
 
     class Config:
@@ -148,7 +178,7 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
     # _get_session() method inherited from SnowflakeConnectionMixin
 
     def format_documents(self, docs: List[Document]) -> List[Document]:
-        """Format documents for RAG usage by extracting content from TRANSCRIPT_TEXT metadata.
+        """Format documents for RAG usage by extracting content from configurable metadata field.
 
         This method converts Snowflake Cortex Search documents to be optimized for RAG chains.
         The formatted content is placed in the page_content field for compatibility with
@@ -165,8 +195,13 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
 
         formatted_docs = []
         for doc in docs:
-            # Extract content using the standalone utility
-            formatted_content = format_cortex_search_documents([doc])
+            # Extract content using the standalone utility with configurable parameters
+            formatted_content = format_cortex_search_documents(
+                [doc],
+                content_field=self.content_field,
+                join_separator=self.join_separator,
+                fallback_to_page_content=self.fallback_to_page_content,
+            )
 
             # Create new document with formatted content in page_content
             # Keep original metadata for reference
@@ -179,10 +214,11 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
             if hasattr(formatted_doc, "metadata"):
                 formatted_doc.metadata["_formatted_for_rag"] = True
                 formatted_doc.metadata["_original_page_content"] = getattr(doc, "page_content", "")
+                formatted_doc.metadata["_content_field_used"] = self.content_field
 
             formatted_docs.append(formatted_doc)
 
-        logger.debug(f"Formatted {len(docs)} documents for RAG usage")
+        logger.debug(f"Formatted {len(docs)} documents for RAG usage using content_field='{self.content_field}'")
         return formatted_docs
 
     def _parse_service_name(self) -> tuple[str, str, str]:
