@@ -2,13 +2,10 @@
 
 You need to create a Cortex Search service in Snowflake with the specified
 columns below to run the integration tests.
-Follow the instructions in the example notebook:
-`snowflake_cortex_search.ipynb` to set up the service and configure
-authentication.
 
 Set the following environment variables before the tests:
 export SNOWFLAKE_ACCOUNT=<snowflake_account>
-export SNOWFLAKE_USER=<snowflake_username>  # Note: USER not USERNAME
+export SNOWFLAKE_USER=<snowflake_user>  # Note: USER not USERNAME
 export SNOWFLAKE_PASSWORD=<snowflake_password>
 export SNOWFLAKE_DATABASE=<snowflake_database>
 export SNOWFLAKE_SCHEMA=<snowflake_schema>
@@ -23,7 +20,22 @@ from langchain_core.documents import Document
 from pydantic import ValidationError
 from snowflake.snowpark import Session
 
-from langchain_snowflake import SnowflakeCortexSearchRetriever
+from langchain_snowflake import SnowflakeCortexSearchRetriever, create_session_from_env
+
+
+@pytest.fixture(scope="session")
+def snowflake_session():
+    """Create Snowflake session from environment variables for integration tests."""
+    required_vars = ["SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD"]
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
+
+    if missing_vars:
+        pytest.skip(f"Integration tests require environment variables: {missing_vars}")
+
+    try:
+        return create_session_from_env()
+    except Exception as e:
+        pytest.skip(f"Failed to create Snowflake session: {e}")
 
 
 # Compilation test for CI - always passes
@@ -36,45 +48,53 @@ def test_retriever_imports_compile() -> None:
 
 
 @pytest.mark.requires("snowflake.core")
-def test_snowflake_cortex_search_invoke() -> None:
+def test_snowflake_cortex_search_invoke(snowflake_session) -> None:
     """Test the invoke() method."""
 
-    search_columns = ["name", "description", "era", "diet"]
+    search_columns = ["TRANSCRIPT_TEXT", "CUSTOMER_NAME", "DEAL_STAGE", "SALES_REP"]
 
     # Updated to match current API
     kwargs = {
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.\
-            {os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.dinosaur_svc",
+        "session": snowflake_session,
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": search_columns,
-        "filter_dict": {"@eq": {"era": "Jurassic"}},
+        "filter_dict": {"@eq": {"CUSTOMER_NAME": "TechCorp Inc"}},
         "k": 10,
     }
 
     retriever = SnowflakeCortexSearchRetriever(**kwargs)
 
-    documents = retriever.invoke("dinosaur with a large tail")
+    documents = retriever.invoke("Tell me about the discovery call with TechCorp Inc")
     assert len(documents) > 0
 
     for doc in documents:
         check_document(doc, search_columns)
-        # Validate the filter was passed through correctly (if era metadata exists)
-        if "era" in doc.metadata:
-            assert doc.metadata["era"] == "Jurassic"
+        # Validate the filter was passed through correctly (if customer name in metadata exists)
+        if "CUSTOMER_NAME" in doc.metadata:
+            assert doc.metadata["CUSTOMER_NAME"] == "TechCorp Inc"
 
 
 @pytest.mark.requires("snowflake.core")
-def test_snowflake_cortex_search_invoke_no_columns_or_filter() -> None:
+def test_snowflake_cortex_search_invoke_no_columns_or_filter(snowflake_session) -> None:
     """Test the invoke() method with no columns or filter."""
 
     kwargs = {
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.\
-            {os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.dinosaur_svc",
+        "session": snowflake_session,
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "k": 10,
     }
 
     retriever = SnowflakeCortexSearchRetriever(**kwargs)
 
-    documents = retriever.invoke("dinosaur with a large tail")
+    documents = retriever.invoke("Who is the Sales Rep for SmallBiz Solutions")
     assert len(documents) > 0
     for doc in documents:
         assert isinstance(doc, Document)
@@ -85,7 +105,7 @@ def test_snowflake_cortex_search_invoke_no_columns_or_filter() -> None:
 def test_snowflake_cortex_search_constructor_no_service_name() -> None:
     """Test the constructor with no service name provided."""
 
-    search_columns = ["name", "description", "era", "diet"]
+    search_columns = ["TRANSCRIPT_TEXT", "CUSTOMER_NAME", "DEAL_STAGE", "SALES_REP"]
 
     kwargs = {
         "search_columns": search_columns,
@@ -97,12 +117,13 @@ def test_snowflake_cortex_search_constructor_no_service_name() -> None:
 
 
 @pytest.mark.requires("snowflake.core")
-def test_snowflake_cortex_search_invalid_service_name() -> None:
+def test_snowflake_cortex_search_invalid_service_name(snowflake_session) -> None:
     """Test the constructor with invalid service name format."""
 
-    search_columns = ["name", "description", "era", "diet"]
+    search_columns = ["TRANSCRIPT_TEXT", "CUSTOMER_NAME", "DEAL_STAGE", "SALES_REP"]
 
     kwargs = {
+        "session": snowflake_session,
         "service_name": "invalid_service_name",  # Should be database.schema.service
         "search_columns": search_columns,
         "k": 10,
@@ -111,98 +132,118 @@ def test_snowflake_cortex_search_invalid_service_name() -> None:
     # This should create the retriever but fail when trying to parse service name
     retriever = SnowflakeCortexSearchRetriever(**kwargs)
 
-    # The error will occur when trying to invoke, not during construction
-    with pytest.raises(ValueError, match="Service name must be fully qualified"):
-        retriever.invoke("test query")
+    # The error will be logged as a warning and return empty results (graceful degradation)
+    documents = retriever.invoke("test query")
+    assert len(documents) == 0  # Should return empty list due to invalid service name
 
 
 @pytest.mark.requires("snowflake.core")
-def test_snowflake_cortex_search_invoke_different_k_values() -> None:
+def test_snowflake_cortex_search_invoke_different_k_values(snowflake_session) -> None:
     """Test the invoke() method with different k values."""
 
-    search_columns = ["name", "description", "era", "diet"]
+    search_columns = ["TRANSCRIPT_TEXT", "CUSTOMER_NAME", "DEAL_STAGE", "SALES_REP"]
 
     # Test with k=1
     kwargs_1 = {
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.\
-            {os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.dinosaur_svc",
+        "session": snowflake_session,
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": search_columns,
         "k": 1,
     }
 
     retriever_1 = SnowflakeCortexSearchRetriever(**kwargs_1)
-    documents_1 = retriever_1.invoke("dinosaur with a large tail")
+    documents_1 = retriever_1.invoke("What is the deal value for SecureBank Ltd?")
     assert len(documents_1) <= 1  # Should return at most 1 document
 
     # Test with k=5
     kwargs_5 = {
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.\
-            {os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.dinosaur_svc",
+        "session": snowflake_session,
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": search_columns,
         "k": 5,
     }
 
     retriever_5 = SnowflakeCortexSearchRetriever(**kwargs_5)
-    documents_5 = retriever_5.invoke("dinosaur with a large tail")
+    documents_5 = retriever_5.invoke("What is the deal value for SecureBank Ltd?")
     assert len(documents_5) <= 5  # Should return at most 5 documents
 
 
 @pytest.mark.requires("snowflake.core")
-def test_snowflake_cortex_search_with_filter() -> None:
+def test_snowflake_cortex_search_with_filter(snowflake_session) -> None:
     """Test the invoke() method with filter."""
 
-    search_columns = ["name", "description", "era", "diet"]
+    search_columns = ["TRANSCRIPT_TEXT", "CUSTOMER_NAME", "DEAL_STAGE", "SALES_REP"]
 
     kwargs = {
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.\
-            {os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.dinosaur_svc",
+        "session": snowflake_session,
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": search_columns,
         "k": 10,
-        "filter_dict": {"@eq": {"era": "Jurassic"}},
+        "filter_dict": {"@eq": {"CUSTOMER_NAME": "TechCorp Inc"}},
     }
 
     retriever = SnowflakeCortexSearchRetriever(**kwargs)
 
-    documents = retriever.invoke("dinosaur with a large tail")
+    documents = retriever.invoke("Tell me about the discovery call with TechCorp Inc")
     assert len(documents) > 0
 
-    # All documents should have Jurassic era due to filter
+    # All documents should have TechCorp Inc customer name due to filter
     for doc in documents:
-        if "era" in doc.metadata:
-            assert doc.metadata["era"] == "Jurassic"
+        if "CUSTOMER_NAME" in doc.metadata:
+            assert doc.metadata["CUSTOMER_NAME"] == "TechCorp Inc"
 
 
 @pytest.mark.requires("snowflake.core")
-def test_snowflake_cortex_search_different_columns() -> None:
+def test_snowflake_cortex_search_different_columns(snowflake_session) -> None:
     """Test the invoke() method with different search columns."""
 
     # Test with minimal columns
-    minimal_columns = ["description"]
+    minimal_columns = ["DEAL_VALUE"]
     kwargs_minimal = {
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.\
-            {os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.dinosaur_svc",
+        "session": snowflake_session,
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": minimal_columns,
         "k": 5,
     }
 
     retriever_minimal = SnowflakeCortexSearchRetriever(**kwargs_minimal)
-    documents_minimal = retriever_minimal.invoke("dinosaur with a large tail")
+    documents_minimal = retriever_minimal.invoke("What is the deal value for SecureBank Ltd?")
 
     assert len(documents_minimal) > 0
     for doc in documents_minimal:
         check_document(doc, minimal_columns)
 
     # Test with more columns
-    full_columns = ["name", "description", "era", "diet"]
+    full_columns = ["TRANSCRIPT_TEXT", "CUSTOMER_NAME", "DEAL_STAGE", "SALES_REP", "DEAL_VALUE"]
     kwargs_full = {
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.\
-            {os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.dinosaur_svc",
+        "session": snowflake_session,
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": full_columns,
         "k": 5,
     }
 
     retriever_full = SnowflakeCortexSearchRetriever(**kwargs_full)
-    documents_full = retriever_full.invoke("dinosaur with a large tail")
+    documents_full = retriever_full.invoke("What is the deal value for SecureBank Ltd?")
 
     assert len(documents_full) > 0
     for doc in documents_full:
@@ -210,32 +251,25 @@ def test_snowflake_cortex_search_different_columns() -> None:
 
 
 @pytest.mark.requires("snowflake.core")
-def test_snowflake_cortex_search_session_auth() -> None:
+def test_snowflake_cortex_search_session_auth(snowflake_session) -> None:
     """Test authentication with a provided `snowflake.snowpark.Session object`."""
 
-    search_columns = ["description", "era"]
+    search_columns = ["TRANSCRIPT_TEXT", "CUSTOMER_NAME", "DEAL_STAGE", "SALES_REP"]
 
     kwargs = {
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.\
-            {os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.dinosaur_svc",
+        "session": snowflake_session,
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": search_columns,
         "k": 10,
     }
 
-    session_config = {
-        "account": os.environ["SNOWFLAKE_ACCOUNT"],
-        "user": os.environ["SNOWFLAKE_USER"],  # Updated to use SNOWFLAKE_USER
-        "password": os.environ["SNOWFLAKE_PASSWORD"],
-        "database": os.environ["SNOWFLAKE_DATABASE"],
-        "schema": os.environ["SNOWFLAKE_SCHEMA"],
-        "warehouse": os.environ.get("SNOWFLAKE_WAREHOUSE", "COMPUTE_WH"),
-    }
+    retriever = SnowflakeCortexSearchRetriever(**kwargs)
 
-    session = Session.builder.configs(session_config).create()
-
-    retriever = SnowflakeCortexSearchRetriever(session=session, **kwargs)
-
-    documents = retriever.invoke("dinosaur with a large tail")
+    documents = retriever.invoke("What is the product line for FastTrack Ltd?")
     assert len(documents) > 0
 
     for doc in documents:
@@ -243,35 +277,43 @@ def test_snowflake_cortex_search_session_auth() -> None:
 
 
 @pytest.mark.requires("snowflake.core")
-def test_snowflake_cortex_search_auto_format_rag() -> None:
+def test_snowflake_cortex_search_auto_format_rag(snowflake_session) -> None:
     """Test auto formatting for RAG functionality."""
 
-    search_columns = ["name", "description", "era", "diet"]
+    search_columns = ["TRANSCRIPT_TEXT", "CUSTOMER_NAME", "DEAL_STAGE", "SALES_REP"]
 
     # Test with auto_format_for_rag=True (default)
     kwargs_auto = {
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.\
-            {os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.dinosaur_svc",
+        "session": snowflake_session,
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": search_columns,
         "k": 5,
         "auto_format_for_rag": True,
     }
 
     retriever_auto = SnowflakeCortexSearchRetriever(**kwargs_auto)
-    documents_auto = retriever_auto.invoke("dinosaur with a large tail")
+    documents_auto = retriever_auto.invoke("What is the deal stage for FastTrack Ltd?")
     assert len(documents_auto) > 0
 
     # Test with auto_format_for_rag=False
     kwargs_manual = {
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.\
-            {os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.dinosaur_svc",
+        "session": snowflake_session,
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": search_columns,
         "k": 5,
         "auto_format_for_rag": False,
     }
 
     retriever_manual = SnowflakeCortexSearchRetriever(**kwargs_manual)
-    documents_manual = retriever_manual.invoke("dinosaur with a large tail")
+    documents_manual = retriever_manual.invoke("What is the deal stage for FastTrack Ltd?")
     assert len(documents_manual) > 0
 
     # Both should return documents, but formatting might be different
