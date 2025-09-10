@@ -56,7 +56,11 @@ def test_snowflake_cortex_search_invoke(snowflake_session) -> None:
     # Updated to match current API
     kwargs = {
         "session": snowflake_session,
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.sales_conversation_search",
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": search_columns,
         "filter_dict": {"@eq": {"CUSTOMER_NAME": "TechCorp Inc"}},
         "k": 10,
@@ -80,7 +84,11 @@ def test_snowflake_cortex_search_invoke_no_columns_or_filter(snowflake_session) 
 
     kwargs = {
         "session": snowflake_session,
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.sales_conversation_search",
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "k": 10,
     }
 
@@ -138,7 +146,11 @@ def test_snowflake_cortex_search_invoke_different_k_values(snowflake_session) ->
     # Test with k=1
     kwargs_1 = {
         "session": snowflake_session,
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.sales_conversation_search",
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": search_columns,
         "k": 1,
     }
@@ -150,7 +162,11 @@ def test_snowflake_cortex_search_invoke_different_k_values(snowflake_session) ->
     # Test with k=5
     kwargs_5 = {
         "session": snowflake_session,
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.sales_conversation_search",
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": search_columns,
         "k": 5,
     }
@@ -168,7 +184,11 @@ def test_snowflake_cortex_search_with_filter(snowflake_session) -> None:
 
     kwargs = {
         "session": snowflake_session,
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.sales_conversation_search",
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": search_columns,
         "k": 10,
         "filter_dict": {"@eq": {"CUSTOMER_NAME": "TechCorp Inc"}},
@@ -193,7 +213,11 @@ def test_snowflake_cortex_search_different_columns(snowflake_session) -> None:
     minimal_columns = ["DEAL_VALUE"]
     kwargs_minimal = {
         "session": snowflake_session,
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.sales_conversation_search",
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": minimal_columns,
         "k": 5,
     }
@@ -209,7 +233,11 @@ def test_snowflake_cortex_search_different_columns(snowflake_session) -> None:
     full_columns = ["TRANSCRIPT_TEXT", "CUSTOMER_NAME", "DEAL_STAGE", "SALES_REP", "DEAL_VALUE"]
     kwargs_full = {
         "session": snowflake_session,
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.sales_conversation_search",
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": full_columns,
         "k": 5,
     }
@@ -230,7 +258,11 @@ def test_snowflake_cortex_search_session_auth(snowflake_session) -> None:
 
     kwargs = {
         "session": snowflake_session,
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.sales_conversation_search",
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": search_columns,
         "k": 10,
     }
@@ -253,7 +285,11 @@ def test_snowflake_cortex_search_auto_format_rag(snowflake_session) -> None:
     # Test with auto_format_for_rag=True (default)
     kwargs_auto = {
         "session": snowflake_session,
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.sales_conversation_search",
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": search_columns,
         "k": 5,
         "auto_format_for_rag": True,
@@ -266,7 +302,11 @@ def test_snowflake_cortex_search_auto_format_rag(snowflake_session) -> None:
     # Test with auto_format_for_rag=False
     kwargs_manual = {
         "session": snowflake_session,
-        "service_name": f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}.{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}.sales_conversation_search",
+        "service_name": (
+            f"{os.environ.get('SNOWFLAKE_DATABASE', 'TESTDB')}."
+            f"{os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')}."
+            "sales_conversation_search"
+        ),
         "search_columns": search_columns,
         "k": 5,
         "auto_format_for_rag": False,
