@@ -234,7 +234,7 @@ class SnowflakeStreaming:
             session = self._get_session()
             from .._connection import SnowflakeAuthUtils
 
-            url = SnowflakeAuthUtils.build_rest_api_url(session) + "/api/v2/cortex/inference:complete"
+            url = SnowflakeAuthUtils.build_rest_api_url(session)
             headers = SnowflakeAuthUtils.get_rest_api_headers(
                 session=session,
                 account=getattr(self, "account", None),
