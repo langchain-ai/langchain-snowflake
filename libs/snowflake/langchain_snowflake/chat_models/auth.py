@@ -109,7 +109,7 @@ class SnowflakeAuth:
 
         try:
             # Build URL using shared utilities
-            url = SnowflakeAuthUtils.build_rest_api_url(session) + "/api/v2/cortex/inference:complete"
+            url = SnowflakeAuthUtils.build_rest_api_url(session)
 
             # Get authentication headers using shared utilities
             headers = SnowflakeAuthUtils.get_rest_api_headers(

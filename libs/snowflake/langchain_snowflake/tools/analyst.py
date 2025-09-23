@@ -190,7 +190,7 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
         payload = self._build_rest_api_payload(query, semantic_model)
 
         # Build URL from session
-        url = SnowflakeAuthUtils.build_rest_api_url(session) + "/v1/chat/completions"
+        url = SnowflakeAuthUtils.build_rest_api_url(session)
 
         try:
             # Get effective timeout respecting Snowflake parameter hierarchy
