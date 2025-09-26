@@ -77,46 +77,8 @@ class CortexSentimentTool(BaseTool, SnowflakeConnectionMixin):
             return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexSentimentTool", "analyze sentiment")
 
     async def _arun(self, text: str, *, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
-        """Async analyze sentiment of the given text using native Snowflake async."""
-        session = self._get_session()
-
-        try:
-            escaped_text = text.replace("'", "''")
-            sql = f"""
-            SELECT SNOWFLAKE.CORTEX.SENTIMENT(
-                '{escaped_text}'
-            ) as sentiment_score
-            """
-
-            # Use native Snowflake async execution
-            async_job = session.sql(sql).collect_nowait()
-
-            # Wait for completion and get results using thread pool only for the result retrieval
-            result = await asyncio.to_thread(async_job.result)
-
-            if result:
-                sentiment_score = result[0]["SENTIMENT_SCORE"]
-
-                # Interpret the sentiment score
-                if sentiment_score > 0.1:
-                    sentiment_label = "positive"
-                elif sentiment_score < -0.1:
-                    sentiment_label = "negative"
-                else:
-                    sentiment_label = "neutral"
-
-                return json.dumps(
-                    {
-                        "text": text,
-                        "sentiment_score": float(sentiment_score),
-                        "sentiment_label": sentiment_label,
-                    }
-                )
-            else:
-                return json.dumps({"error": "No sentiment analysis result"})
-
-        except Exception as e:
-            return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexSentimentTool", "analyze sentiment async")
+        """Async analyze sentiment by delegating to sync method with asyncio.to_thread."""
+        return await asyncio.to_thread(self._run, text, run_manager=run_manager)
 
 
 class CortexSummarizerTool(BaseTool, SnowflakeConnectionMixin):
@@ -164,38 +126,8 @@ class CortexSummarizerTool(BaseTool, SnowflakeConnectionMixin):
             return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexSummarizerTool", "summarize text")
 
     async def _arun(self, text: str, *, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
-        """Async summarize the given text using native Snowflake async."""
-        session = self._get_session()
-
-        try:
-            escaped_text = text.replace("'", "''")
-            sql = f"""
-            SELECT SNOWFLAKE.CORTEX.SUMMARIZE(
-                '{escaped_text}'
-            ) as summary
-            """
-
-            # Use native Snowflake async execution
-            async_job = session.sql(sql).collect_nowait()
-
-            # Wait for completion and get results using thread pool only for the result retrieval
-            result = await asyncio.to_thread(async_job.result)
-
-            if result:
-                summary = result[0]["SUMMARY"]
-                return json.dumps(
-                    {
-                        "original_text": (text[:100] + "..." if len(text) > 100 else text),
-                        "summary": summary,
-                        "original_length": len(text),
-                        "summary_length": len(summary) if summary else 0,
-                    }
-                )
-            else:
-                return json.dumps({"error": "No summary generated"})
-
-        except Exception as e:
-            return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexSummarizerTool", "summarize text async")
+        """Async summarize text by delegating to sync method with asyncio.to_thread."""
+        return await asyncio.to_thread(self._run, text, run_manager=run_manager)
 
 
 class CortexTranslatorTool(BaseTool, SnowflakeConnectionMixin):
@@ -269,49 +201,8 @@ class CortexTranslatorTool(BaseTool, SnowflakeConnectionMixin):
         *,
         run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
     ) -> str:
-        """Async translate the given text to target language using native Snowflake async."""
-        session = self._get_session()
-
-        try:
-            # Handle both string and dict inputs
-            if isinstance(text, dict):
-                text_content = text.get("text", str(text))
-            else:
-                text_content = str(text)
-
-            escaped_text = text_content.replace("'", "''")
-            # CORTEX.TRANSLATE expects (text, source_language, target_language)
-            # If source_language is not provided, we default to 'en' (English)
-            # Note: 'auto' is not supported by Snowflake CORTEX.TRANSLATE
-            source_lang = source_language or "en"
-            sql = f"""
-            SELECT SNOWFLAKE.CORTEX.TRANSLATE(
-                '{escaped_text}',
-                '{source_lang}',
-                '{target_language}'
-            ) as translated_text
-            """
-
-            # Use native Snowflake async execution
-            async_job = session.sql(sql).collect_nowait()
-
-            # Wait for completion and get results using thread pool only for the result retrieval
-            result = await asyncio.to_thread(async_job.result)
-
-            if result:
-                translated_text = result[0]["TRANSLATED_TEXT"]
-                return json.dumps(
-                    {
-                        "original_text": text_content,
-                        "translated_text": translated_text,
-                        "target_language": target_language,
-                    }
-                )
-            else:
-                return json.dumps({"error": "No translation generated"})
-
-        except Exception as e:
-            return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexTranslatorTool", "translate text async")
+        """Async translate text by delegating to sync method with asyncio.to_thread."""
+        return await asyncio.to_thread(self._run, text, target_language, source_language, run_manager=run_manager)
 
 
 class CortexCompleteTool(BaseTool, SnowflakeConnectionMixin):
@@ -365,29 +256,5 @@ class CortexCompleteTool(BaseTool, SnowflakeConnectionMixin):
         *,
         run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
     ) -> str:
-        """Async generate text completion for the given prompt using native Snowflake async."""
-        session = self._get_session()
-
-        try:
-            escaped_prompt = prompt.replace("'", "''")
-            sql = f"""
-            SELECT SNOWFLAKE.CORTEX.COMPLETE(
-                '{model}',
-                '{escaped_prompt}'
-            ) as completion
-            """
-
-            # Use native Snowflake async execution
-            async_job = session.sql(sql).collect_nowait()
-
-            # Wait for completion and get results using thread pool only for the result retrieval
-            result = await asyncio.to_thread(async_job.result)
-
-            if result:
-                completion = result[0]["COMPLETION"]
-                return json.dumps({"prompt": prompt, "completion": completion, "model": model})
-            else:
-                return json.dumps({"error": "No completion generated"})
-
-        except Exception as e:
-            return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexCompleteTool", "generate completion async")
+        """Async generate completion by delegating to sync method with asyncio.to_thread."""
+        return await asyncio.to_thread(self._run, prompt, model, run_manager=run_manager)

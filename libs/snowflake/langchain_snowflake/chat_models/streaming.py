@@ -13,6 +13,8 @@ from langchain_core.callbacks import (
 from langchain_core.messages import AIMessageChunk, BaseMessage
 from langchain_core.outputs import ChatGenerationChunk
 
+from .._error_handling import SnowflakeErrorHandler
+
 logger = logging.getLogger(__name__)
 
 
@@ -72,9 +74,16 @@ class SnowflakeStreaming:
                             run_manager.on_llm_new_token(chunk_content)
 
         except Exception as e:
-            logger.error(f"Error during streaming: {e}")
-            # Fallback to a single error chunk
-            yield ChatGenerationChunk(message=AIMessageChunk(content=f"Error: {e}"))
+            # Use centralized error handling to create consistent error response
+            error_result = SnowflakeErrorHandler.create_chat_error_result(
+                error=e,
+                operation="stream chat completions",
+                model=self.model,
+                input_tokens=self._estimate_tokens(messages),
+            )
+            # Convert ChatResult to streaming chunk format
+            error_content = error_result.generations[0].message.content
+            yield ChatGenerationChunk(message=AIMessageChunk(content=error_content))
 
     async def _astream(
         self,
@@ -105,11 +114,16 @@ class SnowflakeStreaming:
                     yield chunk
 
         except Exception as e:
-            logger.error(f"Error in async streaming: {e}")
-            # Yield an error chunk
-            from langchain_core.outputs import ChatGenerationChunk
-
-            error_chunk = ChatGenerationChunk(message=AIMessageChunk(content=f"Error: {str(e)}"))
+            # Use centralized error handling for consistent async streaming errors
+            error_result = SnowflakeErrorHandler.create_chat_error_result(
+                error=e,
+                operation="async stream chat completions",
+                model=self.model,
+                input_tokens=self._estimate_tokens(messages),
+            )
+            # Convert ChatResult to streaming chunk format
+            error_content = error_result.generations[0].message.content
+            error_chunk = ChatGenerationChunk(message=AIMessageChunk(content=error_content))
             yield error_chunk
 
     def _stream_via_rest_api(
@@ -204,7 +218,8 @@ class SnowflakeStreaming:
                             continue  # Skip malformed JSON
 
         except Exception as e:
-            logger.error(f"Error during REST API streaming: {e}")
+            # Use centralized error handling for REST API streaming errors
+            SnowflakeErrorHandler.log_error("REST API streaming", e)
             # Fallback to regular generation
             result = self._generate_via_rest_api(messages)
             if result.generations:
@@ -294,7 +309,8 @@ class SnowflakeStreaming:
                                 continue  # Skip malformed JSON
 
         except Exception as e:
-            logger.error(f"Error during async REST API streaming: {e}")
+            # Use centralized error handling for async REST API streaming errors
+            SnowflakeErrorHandler.log_error("async REST API streaming", e)
             # Fallback to async regular generation
             result = await self._generate_via_rest_api_async(messages)
             if result.generations:

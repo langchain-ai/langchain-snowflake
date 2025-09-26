@@ -1,2 +1,3 @@
 # Environments
 .venv*
+.DS_Store

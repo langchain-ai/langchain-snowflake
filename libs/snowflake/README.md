@@ -1,24 +1,19 @@
-# LangChain Snowflake
+# Langchain Snowflake
 
-LangChain integration for Snowflake Cortex AI. Native support for chat models, tools, and retrieval with production-ready authentication.
-
-## Production Ready
-
-- 50+ comprehensive tests covering core functionality
-- Native tool calling with Cortex Complete
-- Structured output support (Pydantic, TypedDict, JSON)
-- Complete async/await implementation
-- All authentication methods supported
+Langchain / Langgraph integration for Snowflake Cortex AI. Native support for chat models, tools, and retrieval with production-ready authentication.
 
 ## Features
 
 - Chat models with tool calling support
 - Cortex Search retrieval with relevance assessment
-- Complete toolkit for 6 Cortex AI functions
-- Async support for high-performance applications
-- Agent patterns following LangChain standards
+- Cortex Analyst with semantic Text2SQL support
+- Complete toolkit for Cortex AI functions
+- Async/await support for high-performance applications
+- Agent patterns following Langchain & Langgraph standards
 - Multiple authentication methods
+- Consolidated error handling
 - LangSmith tracing integration
+- 50+ comprehensive tests covering core functionality
 
 ## Installation
 
@@ -36,13 +31,14 @@ export LANGCHAIN_PROJECT=snowflake-cortex
 
 ## Documentation
 
-- [Getting Started](docs/getting_started.ipynb)
-- [Snowflake Workflows](docs/snowflake_workflows.ipynb)
-- [Advanced Patterns](docs/advanced_patterns.ipynb)
+- [Getting Started](https://github.com/langchain-ai/langchain-snowflake/blob/main/libs/snowflake/docs/getting_started.ipynb)
+- [Snowflake Workflows](https://github.com/langchain-ai/langchain-snowflake/blob/main/libs/snowflake/docs/snowflake_workflows.ipynb)
+- [Advanced Patterns](https://github.com/langchain-ai/langchain-snowflake/blob/main/libs/snowflake/docs/advanced_patterns.ipynb)
+- [Quickstart](https://quickstarts.snowflake.com/guide/build-evaluate-rag-langchain-snowflake/index.html?index=..%2F..index#0)
 
 ## Contributing
 
-See [Development.md](Development.md) for setup and guidelines.
+See [Development.md](https://github.com/langchain-ai/langchain-snowflake/blob/main/libs/snowflake/DEVELOPMENT.md) for setup and guidelines.
 
 ## License
 
