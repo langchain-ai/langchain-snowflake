@@ -9,7 +9,6 @@ from typing import Optional
 from snowflake.snowpark import Session
 
 from ._connection.session_manager import SnowflakeSessionManager
-from ._error_handling import SnowflakeErrorHandler
 
 # Chat Models - Cortex Complete
 from .chat_models import ChatSnowflake
@@ -17,14 +16,6 @@ from .chat_models import ChatSnowflake
 # Document Formatters - RAG Utilities
 from .formatters import (
     format_cortex_search_documents,
-)
-
-# MCP Integration
-from .mcp_integration import (
-    MCPToolWrapper,
-    bind_mcp_tools,
-    create_mcp_tool_wrapper,
-    create_snowflake_compatible_tools,
 )
 
 # Retrievers - Cortex Search
@@ -148,7 +139,6 @@ def create_session_from_connection_string() -> Session:
         return Session.builder.configs(connection_params).create()
 
     except Exception as e:
-        SnowflakeErrorHandler.log_and_raise(e, "parse connection string")
         raise ValueError(f"Invalid connection string format: {e}")
 
 
@@ -200,7 +190,6 @@ def create_session_from_pat() -> Session:
     try:
         return SnowflakeSessionManager.create_session(connection_params)
     except Exception as e:
-        SnowflakeErrorHandler.log_and_raise(e, "create session with PAT")
         raise ValueError(f"Failed to create session with PAT: {e}")
 
 
@@ -284,7 +273,6 @@ def create_session_from_key_pair() -> Session:
     except FileNotFoundError:
         raise ValueError(f"Private key file not found: {private_key_path}")
     except Exception as e:
-        SnowflakeErrorHandler.log_and_raise(e, "create session with key pair")
         raise ValueError(f"Failed to create session with key pair: {e}")
 
 
@@ -305,26 +293,26 @@ def get_default_session() -> Optional[Session]:
     # Try key pair authentication first (most secure)
     try:
         return create_session_from_key_pair()
-    except ValueError as e:
-        SnowflakeErrorHandler.log_error("key pair authentication attempt", e)
+    except ValueError:
+        pass
 
     # Try PAT authentication (recommended for production)
     try:
         return create_session_from_pat()
-    except ValueError as e:
-        SnowflakeErrorHandler.log_error("PAT authentication attempt", e)
+    except ValueError:
+        pass
 
     # Try password authentication (development/legacy)
     try:
         return create_session_from_env()
-    except ValueError as e:
-        SnowflakeErrorHandler.log_error("password authentication attempt", e)
+    except ValueError:
+        pass
 
     # Try connection string as last resort
     try:
         return create_session_from_connection_string()
-    except ValueError as e:
-        SnowflakeErrorHandler.log_error("connection string authentication attempt", e)
+    except ValueError:
+        pass
 
     return None
 
@@ -348,11 +336,6 @@ __all__ = [
     "CortexTranslatorTool",
     "CortexCompleteTool",
     "SnowflakeCortexAnalyst",
-    # MCP Integration
-    "MCPToolWrapper",
-    "create_mcp_tool_wrapper",
-    "create_snowflake_compatible_tools",
-    "bind_mcp_tools",
     # Document Formatters
     "format_cortex_search_documents",
     # Note: Agents and workflows moved to docs/examples/ following LangChain
