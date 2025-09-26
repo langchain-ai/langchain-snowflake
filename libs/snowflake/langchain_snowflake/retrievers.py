@@ -16,7 +16,7 @@ from pydantic import Field
 from snowflake.snowpark import Session
 
 from ._connection import SnowflakeAuthUtils, SnowflakeConnectionMixin
-from ._error_handling import SnowflakeErrorHandler
+from ._error_handling import SnowflakeErrorHandler, SnowflakeRestApiErrorHandler
 from .formatters import format_cortex_search_documents
 
 logger = logging.getLogger(__name__)
@@ -277,7 +277,8 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
             return url
 
         except Exception as e:
-            logger.error(f"Error building Cortex Search URL: {e}")
+            # Use centralized error handling for URL building errors
+            SnowflakeErrorHandler.log_and_raise(e, "build Cortex Search URL")
             raise ValueError(f"Failed to build Cortex Search URL: {e}")
 
     def _make_rest_api_request(self, query: str) -> List[Document]:
@@ -306,7 +307,9 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
             response = requests.post(url, json=payload, headers=headers, timeout=timeout, verify=verify_ssl)
             response.raise_for_status()
 
-            data = response.json()
+            data = SnowflakeRestApiErrorHandler.safe_parse_json_response(
+                response, "Cortex Search REST API request", logger
+            )
             return self._parse_rest_api_response(data)
 
         except requests.exceptions.RequestException as e:
@@ -349,7 +352,9 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
                     ssl=verify_ssl,
                 ) as response:
                     response.raise_for_status()
-                    data = await response.json()
+                    data = await SnowflakeRestApiErrorHandler.safe_parse_json_response_async(
+                        response, "async Cortex Search REST API request", logger
+                    )
                     return self._parse_rest_api_response(data)
 
         except Exception as e:
