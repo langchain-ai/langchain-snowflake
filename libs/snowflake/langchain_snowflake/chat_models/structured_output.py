@@ -6,6 +6,8 @@ import re
 
 from langchain_core.messages import SystemMessage
 
+from .._error_handling import SnowflakeErrorHandler
+
 logger = logging.getLogger(__name__)
 
 
@@ -247,8 +249,9 @@ Provide only a valid JSON object that conforms to the schema.
                     else:
                         return parsed_data
 
-                except Exception:
-                    # Fallback: Use LLM to help parse problematic responses
+                except Exception as e:
+                    # Log parsing failure and attempt LLM-assisted fallback
+                    SnowflakeErrorHandler.log_error("parse structured output", e)
                     try:
                         format_prompt = f"""
 Parse this response into the required format. Extract the relevant information and structure it correctly.
@@ -273,8 +276,9 @@ Return ONLY a valid JSON object that matches the required format.
                         else:
                             return parsed_data
 
-                    except Exception:
-                        # Final fallback - return error with raw content
+                    except Exception as fallback_error:
+                        # Log final fallback failure and return structured error response
+                        SnowflakeErrorHandler.log_error("LLM-assisted parsing fallback", fallback_error)
                         return {
                             "error": f"Could not parse response into {self._ls_structured_output_format} format",
                             "raw": response_content,

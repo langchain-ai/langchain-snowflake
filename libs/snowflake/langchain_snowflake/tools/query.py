@@ -109,40 +109,5 @@ class SnowflakeQueryTool(BaseTool, SnowflakeConnectionMixin):
         *,
         run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
     ) -> str:
-        """Async execute SQL query on Snowflake using native Snowflake async."""
-        session = self._get_session()
-
-        try:
-            # Use native Snowflake async execution
-            async_job = session.sql(query).limit(self.max_rows).collect_nowait()
-
-            # Wait for completion and get results using thread pool only for the result retrieval
-            result = await asyncio.to_thread(async_job.result)
-
-            if not result:
-                return "Query executed successfully but returned no results."
-
-            # Format results as JSON
-            formatted_results = []
-            for row in result:
-                row_dict = {}
-                for field_name in row.as_dict():
-                    row_dict[field_name] = str(row[field_name])
-                formatted_results.append(row_dict)
-
-            return json.dumps(
-                {
-                    "results": formatted_results,
-                    "row_count": len(formatted_results),
-                    "query": query,
-                },
-                indent=2,
-            )
-
-        except Exception as e:
-            return SnowflakeToolErrorHandler.handle_sql_error(
-                error=e,
-                tool_name="SnowflakeQueryTool",
-                sql_query=query,
-                operation="execute SQL query async",
-            )
+        """Async execute SQL query by delegating to sync method with asyncio.to_thread."""
+        return await asyncio.to_thread(self._run, query, run_manager=run_manager)

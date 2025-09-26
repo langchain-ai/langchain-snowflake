@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from snowflake.snowpark import Session
 
 from .._connection import SnowflakeAuthUtils, SnowflakeConnectionMixin
-from .._error_handling import SnowflakeToolErrorHandler
+from .._error_handling import SnowflakeRestApiErrorHandler, SnowflakeToolErrorHandler
 from ._base import SnowflakeCortexAnalystInput
 
 logger = logging.getLogger(__name__)
@@ -169,7 +169,9 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
             )
             response.raise_for_status()
 
-            data = response.json()
+            data = SnowflakeRestApiErrorHandler.safe_parse_json_response(
+                response, "Cortex Analyst REST API request", logger
+            )
             return self._parse_rest_api_response(data)
 
         except Exception as e:
@@ -185,31 +187,37 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
             raise e
 
     async def _make_rest_api_request_async(self, query: str, semantic_model: Optional[str] = None) -> str:
-        """Make async REST API request to Cortex Analyst using aiohttp."""
+        """Make async REST API request to Snowflake Cortex Analyst using aiohttp."""
         session = self._get_session()
         payload = self._build_rest_api_payload(query, semantic_model)
 
-        # Build URL from session
-        url = SnowflakeAuthUtils.build_rest_api_url(session)
+        # Build URL manually (matches sync version pattern)
+        try:
+            conn = session._conn._conn
+            base_url = f"https://{conn.host}"
+        except Exception:
+            account_url = self.account or "your-account"
+            base_url = f"https://{account_url}.snowflakecomputing.com"
+
+        endpoint = "/api/v2/cortex/analyst/message"
+        url = base_url + endpoint
+
+        # Use shared auth utilities to get proper headers (consistent with sync version)
+        headers = SnowflakeAuthUtils.get_rest_api_headers(session=session, account=self.account, user=self.user)
 
         try:
-            # Get effective timeout respecting Snowflake parameter hierarchy
-            timeout = self._get_effective_timeout()
-
-            # Use shared auth utilities to get proper headers
-            headers = SnowflakeAuthUtils.get_rest_api_headers(session=session, account=self.account, user=self.user)
-
-            # Use aiohttp for true async HTTP requests
-            async with aiohttp.ClientSession() as client:
-                async with client.post(
+            timeout = aiohttp.ClientTimeout(total=self.request_timeout)
+            async with aiohttp.ClientSession(timeout=timeout) as http_session:
+                async with http_session.post(
                     url,
                     json=payload,
                     headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=timeout),
-                    ssl=True,  # Always use SSL verification for security
+                    ssl=self.verify_ssl,
                 ) as response:
                     response.raise_for_status()
-                    data = await response.json()
+                    data = await SnowflakeRestApiErrorHandler.safe_parse_json_response_async(
+                        response, "async REST API request", logger
+                    )
                     return self._parse_rest_api_response(data)
 
         except Exception as e:

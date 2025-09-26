@@ -152,7 +152,12 @@ dmypy.json
 # Jupyter notebook outputs (may contain sensitive data)
 *.ipynb_checkpoints/
 **/outputs/
+*copy**.ipynb
 
 # Snowflake specific
 snowflake_config*
 *snowflake_creds*
+quickstart*
+
+# mcp
+configuration.yaml

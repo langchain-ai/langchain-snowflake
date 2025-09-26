@@ -12,6 +12,8 @@ from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
+from .._error_handling import SnowflakeRestApiErrorHandler
+
 logger = logging.getLogger(__name__)
 
 
@@ -224,7 +226,9 @@ The goal is to provide the most helpful, accurate, and relevant information to t
             else:
                 # Handle regular JSON response
                 try:
-                    data = response.json()
+                    data = SnowflakeRestApiErrorHandler.safe_parse_json_response(
+                        response, "tool calling REST API request", logger
+                    )
                     if isinstance(data, dict):
                         # Direct response format
                         content_str, extracted_tool_calls, extracted_usage = self._parse_json_response(data)
@@ -246,7 +250,8 @@ The goal is to provide the most helpful, accurate, and relevant information to t
                     content_parts.append(response.text)
 
         except Exception as e:
-            logger.error(f"Error parsing REST API response: {e}")
+            # Use centralized error handling for response parsing errors
+            SnowflakeRestApiErrorHandler.log_error("parse REST API response", e)
             content_parts.append(f"Error parsing response: {str(e)}")
 
         # Combine all content parts
@@ -442,14 +447,17 @@ The goal is to provide the most helpful, accurate, and relevant information to t
 
         # Parse response (reuse sync logic for parsing)
         try:
-            data = response.json()
+            data = SnowflakeRestApiErrorHandler.safe_parse_json_response(
+                response, "async tool calling REST API request", logger
+            )
             if isinstance(data, dict):
                 content_str, extracted_tool_calls, extracted_usage = self._parse_json_response(data)
                 content_parts.append(content_str)
                 tool_calls.extend(extracted_tool_calls)
                 usage_data.update(extracted_usage)
         except Exception as e:
-            logger.error(f"Error parsing async REST API response: {e}")
+            # Use centralized error handling for async response parsing errors
+            SnowflakeRestApiErrorHandler.log_error("parse async REST API response", e)
             content_parts.append(f"Error parsing response: {str(e)}")
 
         # Combine all content parts

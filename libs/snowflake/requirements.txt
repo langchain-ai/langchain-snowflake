@@ -69,6 +69,7 @@ tzdata==2025.2 ; python_version >= "3.9" and python_version < "3.12" and platfor
 tzlocal==5.3.1 ; python_version >= "3.9" and python_version < "3.12"
 urllib3==1.26.20 ; python_version >= "3.9" and python_version < "3.12" and platform_python_implementation == "PyPy" or python_version == "3.9"
 urllib3==2.5.0 ; python_version >= "3.10" and python_version < "3.12" and platform_python_implementation != "PyPy"
+uv==0.8.22 ; python_version >= "3.9" and python_version < "3.12"
 wheel==0.45.1 ; python_version >= "3.9" and python_version < "3.12"
 xxhash==3.5.0 ; python_version >= "3.9" and python_version < "3.12"
 yarl==1.20.1 ; python_version >= "3.9" and python_version < "3.12"
