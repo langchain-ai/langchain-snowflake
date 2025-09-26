@@ -12,6 +12,11 @@ EXPECTED_ALL = [
     "CortexTranslatorTool",
     "CortexCompleteTool",
     "SnowflakeCortexAnalyst",
+    # MCP Integration
+    "MCPToolWrapper",
+    "create_mcp_tool_wrapper",
+    "create_snowflake_compatible_tools",
+    "bind_mcp_tools",
     # Document Formatters
     "format_cortex_search_documents",
     # Authentication utilities
@@ -60,6 +65,23 @@ def test_individual_imports() -> None:
             CortexTranslatorTool is not None,
             CortexCompleteTool is not None,
             SnowflakeCortexAnalyst is not None,
+        ]
+    )
+
+    # MCP Integration
+    from langchain_snowflake import (
+        MCPToolWrapper,
+        bind_mcp_tools,
+        create_mcp_tool_wrapper,
+        create_snowflake_compatible_tools,
+    )
+
+    assert all(
+        [
+            MCPToolWrapper is not None,
+            create_mcp_tool_wrapper is not None,
+            create_snowflake_compatible_tools is not None,
+            bind_mcp_tools is not None,
         ]
     )
 
