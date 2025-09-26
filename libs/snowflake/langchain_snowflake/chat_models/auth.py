@@ -8,6 +8,7 @@ import requests
 from snowflake.snowpark import Session
 
 from .._connection import SnowflakeAuthUtils
+from .._error_handling import SnowflakeRestApiErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -132,8 +133,10 @@ class SnowflakeAuth:
                     ssl=verify_ssl,
                 ) as response:
                     response.raise_for_status()
-                    # Return the JSON data directly since we can't return the response object
-                    return await response.json()
+                    # Use safe JSON parsing with detailed error handling
+                    return await SnowflakeRestApiErrorHandler.safe_parse_json_response_async(
+                        response, "async REST API request", logger
+                    )
 
         except Exception as e:
             logger.error(f"Async REST API request failed: {e}")
