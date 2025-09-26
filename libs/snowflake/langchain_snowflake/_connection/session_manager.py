@@ -6,6 +6,8 @@ from typing import Any, Dict, Optional
 
 from snowflake.snowpark import Session
 
+from .._error_handling import SnowflakeErrorHandler
+
 logger = logging.getLogger(__name__)
 
 
@@ -23,7 +25,9 @@ class SnowflakeSessionManager:
             from importlib import metadata
 
             version = metadata.version("langchain-snowflake")
-        except Exception:
+        except Exception as e:
+            # Log version detection failure but continue with fallback
+            SnowflakeErrorHandler.log_error("detect package version", e)
             version = "0.2.1"  # Fallback version
 
         # Create simple tracking tag
@@ -117,6 +121,8 @@ class SnowflakeSessionManager:
             return session
 
         except Exception as e:
+            # Use centralized error handling for session creation failures
+            SnowflakeErrorHandler.log_and_raise(e, "create Snowflake session")
             raise ValueError(f"Failed to create Snowflake session: {e}")
 
     @staticmethod
