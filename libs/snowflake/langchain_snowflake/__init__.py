@@ -1,15 +1,28 @@
-# Note: Agent and workflow examples are now available in docs/examples/
-# - docs/examples/snowflake_agents.ipynb for basic agent patterns
-# - docs/examples/langgraph_workflows.ipynb for advanced LangGraph workflows
-# Authentication utilities
 import os
+import re
 from importlib import metadata
 from typing import Optional
+from urllib.parse import parse_qs, urlparse
 
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
 from snowflake.snowpark import Session
 
 from ._connection.session_manager import SnowflakeSessionManager
 from ._error_handling import SnowflakeErrorHandler
+from ._validation_utils import SnowflakeValidationUtils
+
+# Agents - Snowflake Cortex Agents
+from .agents import (
+    # Schemas
+    AgentCreateInput,
+    AgentUpdateInput,
+    EnhancedAgentInput,
+    FeedbackInput,
+    FeedbackOutput,
+    SnowflakeCortexAgent,
+    ThreadUpdateInput,
+)
 
 # Chat Models - Cortex Complete
 from .chat_models import ChatSnowflake
@@ -23,8 +36,8 @@ from .formatters import (
 from .mcp_integration import (
     MCPToolWrapper,
     bind_mcp_tools,
-    create_mcp_tool_wrapper,
-    create_snowflake_compatible_tools,
+    create_langchain_tool_from_mcp,
+    filter_compatible_mcp_tools,
 )
 
 # Retrievers - Cortex Search
@@ -60,18 +73,18 @@ def create_session_from_env() -> Session:
     """
     connection_params = {}
 
-    # Required parameters
+    # Use centralized validation utilities
     required_vars = ["SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD"]
-    for var in required_vars:
-        value = os.getenv(var)
-        if not value:
-            raise ValueError(f"Missing required environment variable: {var}")
+    optional_vars = ["SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_DATABASE", "SNOWFLAKE_SCHEMA"]
+
+    # Validate required environment variables
+    env_values = SnowflakeValidationUtils.validate_required_env_vars(required_vars)
+    for var, value in env_values.items():
         connection_params[var.lower().replace("snowflake_", "")] = value
 
-    # Optional parameters
-    optional_vars = ["SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_DATABASE", "SNOWFLAKE_SCHEMA"]
-    for var in optional_vars:
-        value = os.getenv(var)
+    # Get optional environment variables
+    optional_values = SnowflakeValidationUtils.validate_optional_env_vars(optional_vars)
+    for var, value in optional_values.items():
         if value:
             connection_params[var.lower().replace("snowflake_", "")] = value
 
@@ -98,33 +111,30 @@ def create_session_from_connection_string() -> Session:
         ValueError: If connection string format is invalid or environment variable
             missing
     """
-    import re
-    from urllib.parse import parse_qs, urlparse
-
-    # Get connection string from environment variable
-    connection_string = os.getenv("SNOWFLAKE_CONNECTION_STRING")
-    if not connection_string:
-        raise ValueError(
-            "Connection string authentication requires environment variable: " "SNOWFLAKE_CONNECTION_STRING"
-        )
-
-    # Substitute environment variables in the connection string
-    # Pattern: ${VAR_NAME} or $VAR_NAME
-    def replace_env_var(match):
-        var_name = match.group(1) if match.group(1) else match.group(2)
-        value = os.getenv(var_name)
-        if value is None:
-            raise ValueError(f"Environment variable {var_name} referenced in connection string " f"but not set")
-        return value
-
-    # Replace ${VAR} and $VAR patterns
-    connection_string = re.sub(r"\$\{([^}]+)\}|\$([A-Z_][A-Z0-9_]*)", replace_env_var, connection_string)
-
     try:
+        # Get connection string from environment variable
+        connection_string = os.getenv("SNOWFLAKE_CONNECTION_STRING")
+        if not connection_string:
+            raise ValueError(
+                "Connection string authentication requires environment variable: SNOWFLAKE_CONNECTION_STRING"
+            )
+
+        # Substitute environment variables in the connection string
+        # Pattern: ${VAR_NAME} or $VAR_NAME
+        def replace_env_var(match):
+            var_name = match.group(1) if match.group(1) else match.group(2)
+            value = os.getenv(var_name)
+            if value is None:
+                raise ValueError(f"Environment variable {var_name} referenced in connection string but not set")
+            return value
+
+        # Replace ${VAR} and $VAR patterns
+        connection_string = re.sub(r"\$\{([^}]+)\}|\$([A-Z_][A-Z0-9_]*)", replace_env_var, connection_string)
+
         parsed = urlparse(connection_string)
 
-        if parsed.scheme != "snowflake":
-            raise ValueError("Connection string must start with 'snowflake://'")
+        # Use centralized validation utilities
+        SnowflakeValidationUtils.validate_url_scheme(connection_string, "snowflake")
 
         connection_params = {
             "account": parsed.hostname,
@@ -145,11 +155,10 @@ def create_session_from_connection_string() -> Session:
             if values:
                 connection_params[key] = values[0]
 
-        return Session.builder.configs(connection_params).create()
+        return SnowflakeSessionManager.create_session(connection_params)
 
     except Exception as e:
-        SnowflakeErrorHandler.log_and_raise(e, "parse connection string")
-        raise ValueError(f"Invalid connection string format: {e}")
+        SnowflakeErrorHandler.log_and_raise(e, "create session from connection string")
 
 
 def create_session_from_pat() -> Session:
@@ -171,17 +180,24 @@ def create_session_from_pat() -> Session:
         ValueError: If required environment variables are missing
     """
     # Read all credentials from environment variables only
-    account = os.getenv("SNOWFLAKE_ACCOUNT")
-    user = os.getenv("SNOWFLAKE_USER")
-    token = os.getenv("SNOWFLAKE_PAT")
-    warehouse = os.getenv("SNOWFLAKE_WAREHOUSE")
-    database = os.getenv("SNOWFLAKE_DATABASE")
-    schema = os.getenv("SNOWFLAKE_SCHEMA")
+    # Use centralized validation utilities
+    required_vars = ["SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PAT"]
+    optional_vars = ["SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_DATABASE", "SNOWFLAKE_SCHEMA"]
 
-    if not all([account, user, token]):
-        raise ValueError(
-            "PAT authentication requires environment variables: " "SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, and SNOWFLAKE_PAT"
-        )
+    # Validate required environment variables
+    env_values = SnowflakeValidationUtils.validate_required_env_vars(required_vars)
+    account = env_values["SNOWFLAKE_ACCOUNT"]
+    user = env_values["SNOWFLAKE_USER"]
+    token = env_values["SNOWFLAKE_PAT"]
+
+    # Validate authentication requirements
+    SnowflakeValidationUtils.validate_auth_requirements(account, user, "PAT", additional_required=[token])
+
+    # Get optional environment variables
+    optional_values = SnowflakeValidationUtils.validate_optional_env_vars(optional_vars)
+    warehouse = optional_values.get("SNOWFLAKE_WAREHOUSE")
+    database = optional_values.get("SNOWFLAKE_DATABASE")
+    schema = optional_values.get("SNOWFLAKE_SCHEMA")
 
     connection_params = {
         "account": account,
@@ -197,11 +213,7 @@ def create_session_from_pat() -> Session:
     if schema:
         connection_params["schema"] = schema
 
-    try:
-        return SnowflakeSessionManager.create_session(connection_params)
-    except Exception as e:
-        SnowflakeErrorHandler.log_and_raise(e, "create session with PAT")
-        raise ValueError(f"Failed to create session with PAT: {e}")
+    return SnowflakeSessionManager.create_session(connection_params)
 
 
 def create_session_from_key_pair() -> Session:
@@ -223,27 +235,40 @@ def create_session_from_key_pair() -> Session:
     Raises:
         ValueError: If required environment variables are missing or key is invalid
     """
-    # Read all credentials from environment variables only
-    account = os.getenv("SNOWFLAKE_ACCOUNT")
-    user = os.getenv("SNOWFLAKE_USER")
-    private_key_path = os.getenv("SNOWFLAKE_PRIVATE_KEY_PATH")
-    private_key_passphrase = os.getenv("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE")
-    warehouse = os.getenv("SNOWFLAKE_WAREHOUSE")
-    database = os.getenv("SNOWFLAKE_DATABASE")
-    schema = os.getenv("SNOWFLAKE_SCHEMA")
+    # Use centralized validation utilities
+    required_vars = ["SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PRIVATE_KEY_PATH"]
+    optional_vars = [
+        "SNOWFLAKE_PRIVATE_KEY_PASSPHRASE",
+        "SNOWFLAKE_WAREHOUSE",
+        "SNOWFLAKE_DATABASE",
+        "SNOWFLAKE_SCHEMA",
+    ]
 
-    if not all([account, user]):
-        raise ValueError(
-            "Key pair authentication requires environment variables: " "SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER"
-        )
+    # Validate required environment variables
+    env_values = SnowflakeValidationUtils.validate_required_env_vars(required_vars)
+    account = env_values["SNOWFLAKE_ACCOUNT"]
+    user = env_values["SNOWFLAKE_USER"]
+    private_key_path = env_values["SNOWFLAKE_PRIVATE_KEY_PATH"]
 
-    if not private_key_path:
-        raise ValueError("Key pair authentication requires environment variable: " "SNOWFLAKE_PRIVATE_KEY_PATH")
+    # Validate authentication requirements
+    SnowflakeValidationUtils.validate_auth_requirements(
+        account, user, "Key pair", additional_required=[private_key_path]
+    )
+
+    # Validate file exists
+    SnowflakeValidationUtils.validate_file_exists(private_key_path, "Private key file")
+
+    # Get optional environment variables
+    optional_values = SnowflakeValidationUtils.validate_optional_env_vars(optional_vars)
+    private_key_passphrase = optional_values.get("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE")
+    warehouse = optional_values.get("SNOWFLAKE_WAREHOUSE")
+    database = optional_values.get("SNOWFLAKE_DATABASE")
+    schema = optional_values.get("SNOWFLAKE_SCHEMA")
+
+    # Validate cryptography package dependency
+    SnowflakeValidationUtils.validate_package_dependency("cryptography", "pip install cryptography")
 
     try:
-        from cryptography.hazmat.backends import default_backend
-        from cryptography.hazmat.primitives import serialization
-
         # Load private key from file
         with open(private_key_path, "rb") as key_file:
             private_key_data = key_file.read()
@@ -277,15 +302,8 @@ def create_session_from_key_pair() -> Session:
 
         return SnowflakeSessionManager.create_session(connection_params)
 
-    except ImportError:
-        raise ValueError(
-            "cryptography package is required for key pair authentication. " "Install with: pip install cryptography"
-        )
-    except FileNotFoundError:
-        raise ValueError(f"Private key file not found: {private_key_path}")
     except Exception as e:
         SnowflakeErrorHandler.log_and_raise(e, "create session with key pair")
-        raise ValueError(f"Failed to create session with key pair: {e}")
 
 
 def get_default_session() -> Optional[Session]:
@@ -348,15 +366,22 @@ __all__ = [
     "CortexTranslatorTool",
     "CortexCompleteTool",
     "SnowflakeCortexAnalyst",
+    # Snowflake Managed Cortex Agent
+    "SnowflakeCortexAgent",
+    # Agent schemas
+    "AgentCreateInput",
+    "AgentUpdateInput",
+    "EnhancedAgentInput",
+    "ThreadUpdateInput",
+    "FeedbackInput",
+    "FeedbackOutput",
     # MCP Integration
     "MCPToolWrapper",
-    "create_mcp_tool_wrapper",
-    "create_snowflake_compatible_tools",
+    "create_langchain_tool_from_mcp",
+    "filter_compatible_mcp_tools",
     "bind_mcp_tools",
     # Document Formatters
     "format_cortex_search_documents",
-    # Note: Agents and workflows moved to docs/examples/ following LangChain
-    # partner package standards
     # Authentication utilities
     "create_session_from_env",
     "create_session_from_connection_string",

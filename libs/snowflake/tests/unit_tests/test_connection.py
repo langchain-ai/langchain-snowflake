@@ -1,11 +1,10 @@
 """Unit tests for connection management components."""
 
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from pydantic import BaseModel, SecretStr
 
 from langchain_snowflake._connection import (
-    SnowflakeAuthUtils,
     SnowflakeConnectionMixin,
     SnowflakeSessionManager,
 )
@@ -73,44 +72,15 @@ class TestSnowflakeSessionManager:
         assert config["password"] == "test-password"
         assert config["warehouse"] == "test-warehouse"
 
+    @patch("langchain_snowflake._connection.session_manager.SnowflakeSessionManager.test_session_connection")
     @patch("langchain_snowflake._connection.session_manager.Session")
-    def test_get_or_create_session_with_existing(self, mock_session_class):
+    def test_get_or_create_session_with_existing(self, mock_session_class, mock_test_connection):
         """Test session creation with existing session."""
         existing_session = MockSession()
+        mock_test_connection.return_value = True  # Mock successful connection test
 
         result = SnowflakeSessionManager.get_or_create_session(existing_session=existing_session)
 
         assert result == existing_session
         # Should not create new session
         mock_session_class.builder.configs.assert_not_called()
-
-
-class TestSnowflakeAuthUtils:
-    """Test SnowflakeAuthUtils functionality."""
-
-    @patch("jwt.encode")
-    @patch("time.time")
-    def test_create_jwt_token(self, mock_time, mock_jwt):
-        """Test JWT token creation."""
-        # Setup mocks
-        mock_time.return_value = 1234567890
-        mock_jwt.return_value = "mock-jwt-token"
-
-        # Mock private key
-        mock_private_key = Mock()
-
-        token = SnowflakeAuthUtils.create_jwt_token(
-            account="test-account", user="test-user", private_key=mock_private_key
-        )
-
-        assert token == "mock-jwt-token"
-        mock_jwt.assert_called_once()
-
-    def test_extract_account_from_url(self):
-        """Test account extraction from Snowflake URL."""
-        # Test basic functionality exists
-        utils = SnowflakeAuthUtils()
-        assert hasattr(utils, "create_jwt_token")
-
-        # Simple validation that the class can be instantiated
-        assert isinstance(utils, SnowflakeAuthUtils)

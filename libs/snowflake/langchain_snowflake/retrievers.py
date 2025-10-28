@@ -2,10 +2,7 @@
 
 import logging
 from typing import Any, Dict, List, Optional
-from urllib.parse import quote
 
-import aiohttp
-import requests
 from langchain_core.callbacks import (
     AsyncCallbackManagerForRetrieverRun,
     CallbackManagerForRetrieverRun,
@@ -13,10 +10,9 @@ from langchain_core.callbacks import (
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 from pydantic import Field
-from snowflake.snowpark import Session
 
-from ._connection import SnowflakeAuthUtils, SnowflakeConnectionMixin
-from ._error_handling import SnowflakeErrorHandler, SnowflakeRestApiErrorHandler
+from ._connection import RestApiClient, RestApiRequestBuilder, SnowflakeConnectionMixin
+from ._error_handling import SnowflakeErrorHandler
 from .formatters import format_cortex_search_documents
 
 logger = logging.getLogger(__name__)
@@ -218,15 +214,18 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
 
             formatted_docs.append(formatted_doc)
 
-        logger.debug(f"Formatted {len(docs)} documents for RAG usage using content_field='{self.content_field}'")
+        SnowflakeErrorHandler.log_debug(
+            "document formatting",
+            f"formatted {len(docs)} documents for RAG usage using content_field='{self.content_field}'",
+        )
         return formatted_docs
 
     def _parse_service_name(self) -> tuple[str, str, str]:
         """Parse the fully qualified service name into database, schema, and service components."""
-        parts = self.service_name.split(".")
-        if len(parts) != 3:
-            raise ValueError(f"Service name must be fully qualified (database.schema.service): {self.service_name}")
-        return parts[0], parts[1], parts[2]
+        # Use centralized validation utilities
+        from ._validation_utils import SnowflakeValidationUtils
+
+        return SnowflakeValidationUtils.validate_service_name(self.service_name)
 
     # _get_rest_api_headers() functionality replaced by SnowflakeAuthUtils.get_rest_api_headers()
 
@@ -242,77 +241,29 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
 
         return payload
 
-    def _build_cortex_search_url(self, session: Session, database: str, schema: str, service: str) -> str:
-        """Build the correct Cortex Search REST API URL.
-
-        Based on Snowflake documentation:
-        https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-search/query-cortex-search-service#rest-api
-
-        Format: https://<ACCOUNT_URL>/api/v2/databases/<DB_NAME>/schemas/<SCHEMA_NAME>/cortex-search-services/<SERVICE_NAME>:query
-        """
-        try:
-            conn = session._conn._conn
-            account = conn.account
-
-            # Build base URL with correct hostname format
-            if hasattr(conn, "host") and conn.host:
-                base_url = f"https://{conn.host}"
-            elif "." in account:
-                base_url = f"https://{account}.snowflakecomputing.com"
-            else:
-                region = getattr(conn, "region", None) or "us-west-2"
-                if region and region != "us-west-2":
-                    base_url = f"https://{account}.{region}.snowflakecomputing.com"
-                else:
-                    base_url = f"https://{account}.snowflakecomputing.com"
-
-            # Build Cortex Search specific endpoint (NOT Cortex Complete)
-            endpoint = (
-                f"/api/v2/databases/{quote(database)}/schemas/{quote(schema)}"
-                f"/cortex-search-services/{quote(service)}:query"
-            )
-            url = base_url + endpoint
-
-            logger.debug(f"Built Cortex Search URL: {url}")
-            return url
-
-        except Exception as e:
-            # Use centralized error handling for URL building errors
-            SnowflakeErrorHandler.log_and_raise(e, "build Cortex Search URL")
-            raise ValueError(f"Failed to build Cortex Search URL: {e}")
-
     def _make_rest_api_request(self, query: str) -> List[Document]:
-        """Make REST API request to Cortex Search service using correct URL format."""
+        """Make REST API request to Cortex Search service using unified client."""
         session = self._get_session()
         database, schema, service = self._parse_service_name()
-
-        # Build correct Cortex Search URL (different from Cortex Complete)
-        url = self._build_cortex_search_url(session, database, schema, service)
-
-        # Get headers using shared utilities
-        headers = SnowflakeAuthUtils.get_rest_api_headers(
-            session=session,
-            account=getattr(self, "account", None),
-            user=getattr(self, "user", None),
-        )
-
-        # Build payload
         payload = self._build_rest_api_payload(query)
 
         try:
-            # Use configured timeout with SSL verification
-            timeout = getattr(self, "request_timeout", 30)
-            verify_ssl = getattr(self, "verify_ssl", True)
-
-            response = requests.post(url, json=payload, headers=headers, timeout=timeout, verify=verify_ssl)
-            response.raise_for_status()
-
-            data = SnowflakeRestApiErrorHandler.safe_parse_json_response(
-                response, "Cortex Search REST API request", logger
+            # Build request using unified client
+            request_config = RestApiRequestBuilder.cortex_search_request(
+                session=session,
+                database=database,
+                schema=schema,
+                service=service,
+                method="POST",
+                payload=payload,
+                request_timeout=self.request_timeout,
+                verify_ssl=self.verify_ssl,
             )
-            return self._parse_rest_api_response(data)
 
-        except requests.exceptions.RequestException as e:
+            response_data = RestApiClient.make_sync_request(request_config, "Cortex Search REST API request")
+            return self._parse_rest_api_response(response_data)
+
+        except Exception as e:
             return SnowflakeErrorHandler.log_and_raise(
                 error=e,
                 operation="Cortex Search REST API request",
@@ -320,46 +271,31 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
             )
 
     async def _make_rest_api_request_async(self, query: str) -> List[Document]:
-        """Make async REST API request to Cortex Search service using aiohttp."""
+        """Make async REST API request to Cortex Search service using unified client."""
         session = self._get_session()
         database, schema, service = self._parse_service_name()
-
-        # Build correct Cortex Search URL (different from Cortex Complete)
-        url = self._build_cortex_search_url(session, database, schema, service)
-
-        # Get headers using shared utilities
-        headers = SnowflakeAuthUtils.get_rest_api_headers(
-            session=session,
-            account=getattr(self, "account", None),
-            user=getattr(self, "user", None),
-        )
-
-        # Build payload
         payload = self._build_rest_api_payload(query)
 
         try:
-            # Use configured timeout with SSL verification
-            timeout = getattr(self, "request_timeout", 30)
-            verify_ssl = getattr(self, "verify_ssl", True)
+            # Build request using unified client
+            request_config = RestApiRequestBuilder.cortex_search_request(
+                session=session,
+                database=database,
+                schema=schema,
+                service=service,
+                method="POST",
+                payload=payload,
+                request_timeout=self.request_timeout,
+                verify_ssl=self.verify_ssl,
+            )
 
-            # Use aiohttp for true async HTTP
-            async with aiohttp.ClientSession() as client:
-                async with client.post(
-                    url,
-                    json=payload,
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=timeout),
-                    ssl=verify_ssl,
-                ) as response:
-                    response.raise_for_status()
-                    data = await SnowflakeRestApiErrorHandler.safe_parse_json_response_async(
-                        response, "async Cortex Search REST API request", logger
-                    )
-                    return self._parse_rest_api_response(data)
+            response_data = await RestApiClient.make_async_request(
+                request_config, "async Cortex Search REST API request"
+            )
+            return self._parse_rest_api_response(response_data)
 
         except Exception as e:
-            logger.error(f"Async Cortex Search REST API request failed: {e}")
-            raise
+            SnowflakeErrorHandler.log_and_raise(e, "async Cortex Search REST API request")
 
     def _parse_rest_api_response(self, data: Dict[str, Any]) -> List[Document]:
         """Parse REST API response into Document objects."""

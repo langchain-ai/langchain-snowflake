@@ -5,15 +5,14 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-import requests
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import Field, SecretStr
 from snowflake.snowpark import Session
 
-from .._connection import SnowflakeAuthUtils
-from .._error_handling import SnowflakeErrorHandler, SnowflakeRestApiErrorHandler
+from .._connection.rest_client import RestApiClient, RestApiRequestBuilder
+from .._error_handling import SnowflakeErrorHandler
 from .auth import SnowflakeAuth
 from .streaming import SnowflakeStreaming
 from .structured_output import SnowflakeStructuredOutput
@@ -282,6 +281,35 @@ class ChatSnowflake(
         """Return type of chat model."""
         return "snowflake-cortex"
 
+    def _build_cortex_options_for_sql(self) -> Optional[Dict[str, Any]]:
+        """Build options dictionary for SQL-based Cortex COMPLETE function.
+
+        This method builds options specifically for SQL function calls,
+        excluding tools and other REST API-specific features.
+
+        Returns:
+            Dictionary of options for Cortex SQL function, or None if no options
+
+        Raises:
+            ValueError: If parameter validation fails
+        """
+        try:
+            # Use centralized options building from SnowflakeUtils
+            # Only include basic generation parameters (no tools, no streaming for SQL)
+            options = self._build_options_dict(
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                top_p=self.top_p,
+            )
+
+            return options
+
+        except Exception as e:
+            # Use centralized error handling
+            from .._error_handling import SnowflakeErrorHandler
+
+            SnowflakeErrorHandler.log_and_raise(e, "build Cortex options for SQL")
+
     def _generate(
         self,
         messages: List[BaseMessage],
@@ -325,12 +353,8 @@ class ChatSnowflake(
 
         try:
             if options:
-                # Use array format with options - Fix JSON escaping issue
-                prompt_data = (
-                    formatted_prompt
-                    if isinstance(formatted_prompt, list)
-                    else [{"role": "user", "content": formatted_prompt}]
-                )
+                # formatted_prompt is always a List[Dict[str, str]] from _format_messages_for_cortex
+                prompt_data: List[Dict[str, str]] = formatted_prompt
 
                 # Use parameterized queries to avoid JSON escaping issues entirely
                 sql = """SELECT SNOWFLAKE.CORTEX.COMPLETE(?, PARSE_JSON(?), PARSE_JSON(?)) as response"""
@@ -353,7 +377,10 @@ class ChatSnowflake(
                     result = session.sql(sql, params=[self.model, prompt_text]).collect()
 
             if not result:
-                raise ValueError("No response from Cortex Complete")
+                try:
+                    raise ValueError("No response from Cortex Complete")
+                except Exception as e:
+                    SnowflakeErrorHandler.log_and_raise(e, "validate Cortex Complete response")
 
             response_text = result[0].as_dict()["RESPONSE"]
 
@@ -412,31 +439,42 @@ class ChatSnowflake(
         """Async generate response by delegating to sync method with asyncio.to_thread."""
         return await asyncio.to_thread(self._generate_via_sql, messages, stop, run_manager, **kwargs)
 
-    def _make_rest_api_request(self, payload: Dict[str, Any]) -> requests.Response:
-        """Make REST API request to Snowflake Cortex using shared utilities."""
+    def _make_rest_api_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Make REST API request to Snowflake Cortex using RestApiClient."""
         session = self._get_session()
-        return SnowflakeAuthUtils.make_rest_api_request(
+
+        request_config = RestApiRequestBuilder.cortex_complete_request(
             session=session,
+            method="POST",
             payload=payload,
-            account=getattr(self, "account", None),
-            user=getattr(self, "user", None),
-            token=getattr(self, "token", None),
-            private_key_path=getattr(self, "private_key_path", None),
-            private_key_passphrase=getattr(self, "private_key_passphrase", None),
-            request_timeout=getattr(self, "request_timeout", 30),
-            verify_ssl=getattr(self, "verify_ssl", True),
-            stream=False,
+            request_timeout=self.request_timeout,
+            verify_ssl=self.verify_ssl,
         )
 
+        return RestApiClient.make_sync_request(request_config, "Cortex Complete")
+
     async def _make_rest_api_request_async(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Make async REST API request by delegating to sync method with asyncio.to_thread."""
+        """Make async REST API request using RestApiClient."""
 
-        # Delegate to sync method using thread pool
-        def sync_request():
-            response = self._make_rest_api_request(payload)
-            return SnowflakeRestApiErrorHandler.safe_parse_json_response(response, "async REST API request", logger)
+        session = self._get_session()
 
-        return await asyncio.to_thread(sync_request)
+        try:
+            request_config = RestApiRequestBuilder.cortex_complete_request(
+                session=session,
+                method="POST",
+                payload=payload,
+                request_timeout=self.request_timeout,
+                verify_ssl=self.verify_ssl,
+            )
+
+            response_data = await RestApiClient.make_async_request(request_config, "async Cortex Complete")
+
+            SnowflakeErrorHandler.log_debug("async REST API", "Async REST API request completed successfully", logger)
+            return response_data
+
+        except Exception as e:
+            SnowflakeErrorHandler.log_error("async REST API request", e, logger)
+            raise
 
     def _generate_via_rest_api(
         self,
@@ -454,11 +492,14 @@ class ChatSnowflake(
             # Build the REST API payload
             payload = self._build_rest_api_payload(messages)
 
-            # Make the REST API call (authentication handled internally)
-            response = self._make_rest_api_request(payload)
+            # Use non-streaming for invoke() - cleaner JSON responses
+            payload["stream"] = False
+
+            # Make the REST API call using RestApiClient
+            response_data = self._make_rest_api_request(payload)
 
             # Parse the response and handle tool calls
-            return self._parse_rest_api_response(response, messages)
+            return self._parse_rest_api_response(response_data, messages)
 
         except Exception as e:
             # Use centralized error handling with better context
@@ -483,26 +524,14 @@ class ChatSnowflake(
             # Build the REST API payload
             payload = self._build_rest_api_payload(messages)
 
-            # Make the async REST API call using aiohttp
+            # Use non-streaming for ainvoke() - cleaner JSON responses
+            payload["stream"] = False
+
+            # Make the async REST API call using RestApiClient
             response_data = await self._make_rest_api_request_async(payload)
 
-            # Create a mock response object that matches what _parse_rest_api_response expects
-            class AsyncResponseWrapper:
-                def __init__(self, data):
-                    self._data = data
-                    # Add mock attributes that parsing methods might expect
-                    self.headers = {}
-                    self.status_code = 200
-                    self.text = ""
-                    self.content = b""
-
-                def json(self):
-                    return self._data
-
-            mock_response = AsyncResponseWrapper(response_data)
-
-            # Process response using sync parsing method (no async version needed)
-            return self._parse_rest_api_response(mock_response, messages)
+            # Parse the response and handle tool calls - USE ASYNC VERSION for async tool execution
+            return await self._parse_rest_api_response_async(response_data, messages)
 
         except Exception as e:
             # Use centralized error handling with better context

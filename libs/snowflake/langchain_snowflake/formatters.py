@@ -9,6 +9,8 @@ from typing import List
 
 from langchain_core.documents import Document
 
+from ._error_handling import SnowflakeErrorHandler
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,57 +20,66 @@ def format_cortex_search_documents(
     join_separator: str = "\n\n",
     fallback_to_page_content: bool = True,
 ) -> str:
-    """Format Snowflake Cortex Search documents for RAG usage.
+    """Format documents from Snowflake Cortex Search for RAG usage.
 
-    This utility extracts content from Snowflake Cortex Search documents which
-    typically store the actual content in metadata fields rather than page_content.
+    This function extracts content from Cortex Search documents and formats them
+    into a single string suitable for use as context in RAG applications.
 
     Args:
-        docs: List of Document objects from Snowflake Cortex Search
-        content_field: Metadata field containing the actual content (default: "TRANSCRIPT_TEXT")
-        join_separator: String to join multiple documents (default: "\\n\\n")
-        fallback_to_page_content: If True, fall back to page_content when metadata field is empty
+        docs: List of Document objects from Cortex Search
+        content_field: Metadata field containing the main content
+        join_separator: String used to join multiple documents
+        fallback_to_page_content: Whether to use page_content if content_field is missing
 
     Returns:
-        Formatted string ready for use in RAG chains
+        Formatted string containing all document content
 
     Example:
-        >>> from .formatters import format_cortex_search_documents
-        >>> formatted_context = format_cortex_search_documents(docs)
-        >>> chain = retriever | format_cortex_search_documents | prompt | llm
+        >>> from langchain_snowflake import SnowflakeCortexSearchRetriever, format_cortex_search_documents
+        >>> retriever = SnowflakeCortexSearchRetriever(...)
+        >>> docs = retriever.get_relevant_documents("query")
+        >>> context = format_cortex_search_documents(docs, content_field="CONTENT")
     """
     if not docs:
-        logger.debug("No documents provided to format_cortex_search_documents")
+        SnowflakeErrorHandler.log_debug(
+            "document formatting", "no documents provided to format_cortex_search_documents"
+        )
         return ""
 
     content_parts = []
 
     for i, doc in enumerate(docs):
-        content = None
-
-        # Try to extract from specified metadata field
-        if hasattr(doc, "metadata") and doc.metadata and content_field in doc.metadata:
+        # Try to extract content from specified field
+        if content_field in doc.metadata:
             content = doc.metadata[content_field]
             if content and str(content).strip():
                 content_parts.append(str(content).strip())
-                logger.debug(f"Extracted content from {content_field} for document {i + 1}: {len(str(content))} chars")
+                SnowflakeErrorHandler.log_debug(
+                    "document formatting",
+                    f"extracted content from {content_field} for document {i + 1}: {len(str(content))} chars",
+                )
                 continue
 
         # Fallback to page_content if enabled and available
-        if fallback_to_page_content and hasattr(doc, "page_content") and doc.page_content:
+        if fallback_to_page_content and doc.page_content and str(doc.page_content).strip():
             content = doc.page_content
-            if content and str(content).strip():
+            if content:
                 content_parts.append(str(content).strip())
-                logger.debug(f"Used page_content fallback for document {i + 1}: {len(str(content))} chars")
+                SnowflakeErrorHandler.log_debug(
+                    "document formatting", f"used page_content fallback for document {i + 1}: {len(str(content))} chars"
+                )
                 continue
 
         # Log when no content is found
-        logger.warning(
-            f"""No content found for document {i + 1}. Available metadata keys: 
-                    {list(doc.metadata.keys()) if hasattr(doc, 'metadata') and doc.metadata else 'None'}"""
+        SnowflakeErrorHandler.log_warning_and_fallback(
+            error=Exception(f"No content found for document {i + 1}"),
+            operation="document content extraction",
+            fallback_action=f"available metadata keys: {list(doc.metadata.keys())}",
         )
 
     result = join_separator.join(content_parts)
-    logger.debug(f"Formatted {len(docs)} documents into {len(result)} characters of context")
+    SnowflakeErrorHandler.log_debug(
+        "document formatting", f"formatted {len(docs)} documents into {len(result)} characters of context"
+    )
 
     return result

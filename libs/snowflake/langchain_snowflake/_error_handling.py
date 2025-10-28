@@ -6,7 +6,7 @@ across tools and chat models.
 
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, NoReturn, Optional
 
 from langchain_core.outputs import ChatResult
 
@@ -52,7 +52,7 @@ class SnowflakeErrorHandler:
         error: Exception,
         operation: str,
         logger_instance: Optional[logging.Logger] = None,
-    ) -> None:
+    ) -> NoReturn:
         """Log error and re-raise it.
 
         Args:
@@ -140,9 +140,7 @@ class SnowflakeErrorHandler:
         from .chat_models.utils import SnowflakeMetadataFactory
 
         # Create usage metadata using existing factory (maintains compatibility)
-        usage_metadata = SnowflakeMetadataFactory.create_usage_metadata(
-            input_tokens=input_tokens, output_tokens=0, total_tokens=input_tokens
-        )
+        usage_metadata = SnowflakeMetadataFactory.create_usage_metadata(input_tokens=input_tokens, output_tokens=0)
 
         # Create response metadata using existing factory (maintains compatibility)
         response_metadata = SnowflakeMetadataFactory.create_response_metadata(model=model, finish_reason="error")
@@ -214,6 +212,76 @@ class SnowflakeErrorHandler:
         log = logger_instance or logger
         log.warning(f"{operation} failed: {error}")
         log.info(f"Using fallback: {fallback_action}")
+
+    @staticmethod
+    def log_info(
+        operation: str,
+        message: str,
+        logger_instance: Optional[logging.Logger] = None,
+    ) -> None:
+        """Log info with standardized format.
+
+        Args:
+            operation: Description of the operation
+            message: Info message to log
+            logger_instance: Specific logger to use (defaults to module logger)
+        """
+        log = logger_instance or logger
+        log.info(f"{operation}: {message}")
+
+    @staticmethod
+    def log_debug(
+        operation: str,
+        message: str,
+        logger_instance: Optional[logging.Logger] = None,
+    ) -> None:
+        """Log debug with standardized format.
+
+        Args:
+            operation: Description of the operation
+            message: Debug message to log
+            logger_instance: Specific logger to use (defaults to module logger)
+        """
+        log = logger_instance or logger
+        log.debug(f"{operation}: {message}")
+
+    @staticmethod
+    def log_operation_start(
+        operation: str,
+        details: str = "",
+        logger_instance: Optional[logging.Logger] = None,
+    ) -> None:
+        """Log operation start with standardized format.
+
+        Args:
+            operation: Description of the operation starting
+            details: Additional details about the operation
+            logger_instance: Specific logger to use (defaults to module logger)
+        """
+        log = logger_instance or logger
+        message = f"Starting {operation}"
+        if details:
+            message += f": {details}"
+        log.info(message)
+
+    @staticmethod
+    def log_operation_success(
+        operation: str,
+        details: str = "",
+        logger_instance: Optional[logging.Logger] = None,
+    ) -> None:
+        """Log operation success with standardized format.
+
+        Args:
+            operation: Description of the completed operation
+            details: Additional details about the operation result
+            logger_instance: Specific logger to use (defaults to module logger)
+        """
+        log = logger_instance or logger
+        message = f"Completed {operation}"
+        if details:
+            message += f": {details}"
+        log.info(message)
 
 
 class SnowflakeToolErrorHandler(SnowflakeErrorHandler):
@@ -366,10 +434,7 @@ class SnowflakeRestApiErrorHandler(SnowflakeErrorHandler):
                 # Check if this is a Server-Sent Events (SSE) response using robust detection
                 content = response.text
                 if SnowflakeRestApiErrorHandler._is_sse_response(response, content):
-                    log.warning(
-                        f"Detected SSE format response during {operation} - "
-                        "this usually indicates a configuration issue"
-                    )
+                    log.debug(f"Parsing SSE format response during {operation}")
                     return SnowflakeRestApiErrorHandler._parse_sse_response(content, log)
                 else:
                     # Re-raise the original JSON error with context
@@ -389,27 +454,84 @@ class SnowflakeRestApiErrorHandler(SnowflakeErrorHandler):
 
     @staticmethod
     def _parse_sse_response(content: str, log: logging.Logger) -> Dict[str, Any]:
-        """Simple SSE detection - returns helpful error instead of complex parsing.
+        """Parse SSE response and extract actual content.
 
-        Since receiving SSE when expecting JSON usually indicates a configuration issue,
-        this method provides a clear error message rather than attempting complex parsing.
+        Attempts to extract the actual agent response from SSE format.
+        If that fails, returns helpful error information.
 
         Args:
             content: Raw SSE content string
             log: Logger instance
 
         Returns:
-            Dictionary with error information and suggestions
+            Dictionary with parsed content or error information
         """
-        log.warning("Received SSE format when JSON was expected. This may indicate a configuration issue.")
+        log.debug("Received SSE format response - parsing streaming content")
+        log.debug(f"SSE content preview (first 500 chars): {content[:500]}")
 
-        # Provide helpful error response instead of trying to parse SSE
-        return {
-            "error": "Received Server-Sent Events format instead of JSON",
-            "suggestion": "Check if streaming is incorrectly enabled in the request configuration",
-            "content_preview": content[:200] + "..." if len(content) > 200 else content,
-            "fix_hint": "Ensure payload['stream'] = False for non-streaming requests",
-        }
+        try:
+            # Try to extract actual content from SSE format
+            # SSE format typically has lines like: data: {"content": "actual response"}
+            import json
+
+            # Look for data: lines with JSON content
+            data_lines = []
+            for line in content.split("\n"):
+                line = line.strip()
+                if line.startswith("data: "):
+                    data_content = line[6:]  # Remove 'data: ' prefix
+                    if data_content and data_content != "[DONE]":
+                        try:
+                            data_json = json.loads(data_content)
+                            data_lines.append(data_json)
+                        except json.JSONDecodeError:
+                            continue
+
+            # Extract content from parsed data
+            if data_lines:
+                # Combine content from all data lines
+                full_content = ""
+                for data in data_lines:
+                    if isinstance(data, dict):
+                        # Look for content in various possible fields
+                        if "choices" in data and data["choices"]:
+                            choice = data["choices"][0]
+                            if "delta" in choice and "content" in choice["delta"]:
+                                full_content += choice["delta"]["content"]
+                            elif "message" in choice and "content" in choice["message"]:
+                                full_content += choice["message"]["content"]
+                        elif "content" in data:
+                            full_content += str(data["content"])
+                        elif "text" in data:
+                            full_content += str(data["text"])
+
+                if full_content.strip():
+                    return {
+                        "output": full_content.strip(),
+                        "source": "sse_parsed",
+                        "raw_sse_data": data_lines[:3],  # Include first 3 data objects for debugging
+                    }
+
+            # If we couldn't extract content, return detailed debug info
+            return {
+                "output": "",  # Empty response when no content found
+                "source": "sse_empty",
+                "debug_info": {
+                    "message": "SSE response received but no extractable content found",
+                    "total_lines": len(content.split("\n")),
+                    "data_lines_found": len(data_lines),
+                    "first_few_lines": content.split("\n")[:10],
+                    "sample_data_objects": data_lines[:2] if data_lines else [],
+                },
+            }
+
+        except Exception as e:
+            log.error(f"Error parsing SSE response: {e}")
+            return {
+                "error": "Failed to parse Server-Sent Events response",
+                "parse_error": str(e),
+                "content_preview": content[:200] + "..." if len(content) > 200 else content,
+            }
 
     @staticmethod
     def _is_sse_response(response: Any, content: str) -> bool:
@@ -482,10 +604,7 @@ class SnowflakeRestApiErrorHandler(SnowflakeErrorHandler):
             except json.JSONDecodeError:
                 # Check if this is a Server-Sent Events (SSE) response using robust detection
                 if SnowflakeRestApiErrorHandler._is_sse_response(response, content):
-                    log.warning(
-                        f"Detected SSE format response during {operation} - "
-                        "this usually indicates a configuration issue"
-                    )
+                    log.debug(f"Parsing SSE format response during {operation}")
                     return SnowflakeRestApiErrorHandler._parse_sse_response(content, log)
                 else:
                     # Re-raise the original JSON error with context
