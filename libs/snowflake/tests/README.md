@@ -6,7 +6,7 @@ This directory contains the test suite for the `langchain-snowflake` package.
 
 ### Unit Tests (`tests/unit_tests/`)
 
-The unit test suite contains **17 core unit tests** covering:
+The unit test suite contains **20 core unit tests** covering:
 
 1. **Chat Models** (`test_chat_models.py`) - 8 tests
    - 2 main class tests (initialization)
@@ -14,17 +14,17 @@ The unit test suite contains **17 core unit tests** covering:
    - 2 structured output tests (Pydantic, JSON schema)
    - 2 utility tests (message conversion, validation)
 
-2. **Tools** (`test_tools.py`) - 2 tests
+2. **Tools** (`test_tools.py`) - 5 tests
    - 1 CortexCompleteTool test
    - 1 SnowflakeQueryTool test
+   - 3 SqlExecutionClient tests (sync execution, Cortex functions, error handling)
 
 3. **Retrievers** (`test_retrievers.py`) - 1 test
    - 1 basic search test
 
-4. **Connection** (`test_connection.py`) - 3 tests
+4. **Connection** (`test_connection.py`) - 2 tests
    - 1 SnowflakeConnectionMixin test
    - 1 SnowflakeSessionManager test
-   - 1 SnowflakeAuthUtils test
 
 5. **Utilities** (`test_utilities.py`) - 3 tests
    - 1 formatters test
