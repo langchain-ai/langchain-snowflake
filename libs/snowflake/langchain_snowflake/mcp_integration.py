@@ -55,6 +55,26 @@ class MCPToolWrapper:
 
         Returns:
             Tool execution result as string
+
+        Note:
+            This method raises an error because MCP tools are async-only.
+            Use ainvoke() instead for proper async execution.
+        """
+        # MCP tools are async-only, so we can't execute them synchronously
+        raise RuntimeError(
+            f"MCP tool '{self.mcp_tool.name}' does not support synchronous execution. "
+            f"Use ainvoke() instead for async tool execution."
+        )
+
+    async def arun(self, *args, **kwargs) -> str:
+        """Execute the MCP tool asynchronously.
+
+        Args:
+            *args: Positional arguments for the tool
+            **kwargs: Keyword arguments for the tool
+
+        Returns:
+            Tool execution result as string
         """
         try:
             SnowflakeErrorHandler.log_debug("MCP tool execution", f"executing {self.mcp_tool.name} with args: {args}")
@@ -70,8 +90,8 @@ class MCPToolWrapper:
                 # Multiple positional arguments
                 tool_input = list(args)
 
-            # Execute MCP tool
-            result = self.mcp_session.call_tool(self.mcp_tool.name, tool_input)
+            # Execute MCP tool asynchronously
+            result = await self.mcp_session.call_tool(self.mcp_tool.name, tool_input)
 
             # Convert result to string format expected by LangChain
             if isinstance(result, dict):
@@ -113,20 +133,19 @@ def create_langchain_tool_from_mcp(mcp_tool, mcp_session) -> Tool:
         name = getattr(mcp_tool, "name", "unknown_mcp_tool")
         description = getattr(mcp_tool, "description", f"MCP tool: {name}")
 
-        # Create LangChain Tool
+        # Create LangChain Tool with both sync and async methods
         langchain_tool = Tool(
             name=name,
             description=description,
-            func=wrapper.run,
+            func=wrapper.run,  # This will raise an error for sync calls
+            coroutine=wrapper.arun,  # This handles async calls properly
         )
 
         return langchain_tool
 
     except Exception as e:
-        SnowflakeToolErrorHandler.handle_tool_error(
-            error=e, tool_name="unknown", operation="convert MCP tool to LangChain Tool"
-        )
-        raise
+        SnowflakeErrorHandler.log_error("MCP tool conversion", e, logger)
+        raise ValueError(f"Failed to convert MCP tool '{name}': {e}")
 
 
 def filter_compatible_mcp_tools(
