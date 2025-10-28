@@ -3,7 +3,6 @@
 import logging
 from typing import Any, Dict, Optional
 
-import requests
 from snowflake.snowpark import Session
 
 logger = logging.getLogger(__name__)
@@ -167,86 +166,28 @@ class SnowflakeAuthUtils:
             ValueError: If URL cannot be constructed
         """
         try:
-            conn = session._conn._conn
-            account = conn.account
+            # Use session method to get account (more reliable)
+            account = session.get_current_account()
+            
+            # Handle None case
+            if not account:
+                raise ValueError("Unable to retrieve account information from session")
+            
+            # Remove quotes if present (Snowflake returns quoted account names)
+            if account.startswith('"') and account.endswith('"'):
+                account = account[1:-1]
+            
+            # Extract account name (remove region/cloud info if present)
+            account_name = account.split(".")[0] if "." in account else account
 
             # Build URL with correct hostname format
-            if hasattr(conn, "host") and conn.host:
-                base_url = f"https://{conn.host}"
-            elif "." in account:
-                base_url = f"https://{account}.snowflakecomputing.com"
-            else:
-                region = getattr(conn, "region", None) or "us-west-2"
-                if region and region != "us-west-2":
-                    base_url = f"https://{account}.{region}.snowflakecomputing.com"
-                else:
-                    base_url = f"https://{account}.snowflakecomputing.com"
-
+            base_url = f"https://{account_name}.snowflakecomputing.com"
             return f"{base_url}/api/v2/cortex/inference:complete"
 
         except Exception as e:
-            logger.error(f"Error building REST API URL: {e}")
-            raise ValueError(f"Failed to build REST API URL: {e}")
-
-    @staticmethod
-    def make_rest_api_request(
-        session: Session,
-        payload: Dict[str, Any],
-        account: Optional[str] = None,
-        user: Optional[str] = None,
-        token: Optional[str] = None,
-        private_key_path: Optional[str] = None,
-        private_key_passphrase: Optional[str] = None,
-        request_timeout: int = 30,
-        verify_ssl: bool = True,
-        stream: bool = False,
-    ) -> requests.Response:
-        """Make a REST API request to Snowflake with authentication.
-
-        Args:
-            session: Active Snowflake session
-            payload: Request payload dictionary
-            account: Snowflake account identifier (for JWT)
-            user: Snowflake username (for JWT)
-            token: Personal Access Token
-            private_key_path: Path to private key file (for JWT)
-            private_key_passphrase: Private key passphrase (for JWT)
-            request_timeout: Request timeout in seconds
-            verify_ssl: Whether to verify SSL certificates
-            stream: Whether to enable streaming response
-
-        Returns:
-            HTTP response object
-
-        Raises:
-            requests.RequestException: If request fails
-            ValueError: If authentication fails
-        """
-        # Get authentication headers
-        headers = SnowflakeAuthUtils.get_rest_api_headers(
-            session=session,
-            account=account,
-            user=user,
-            token=token,
-            private_key_path=private_key_path,
-            private_key_passphrase=private_key_passphrase,
-        )
-
-        # Build API URL
-        url = SnowflakeAuthUtils.build_rest_api_url(session)
-
-        # Make the request
-        response = requests.post(
-            url,
-            headers=headers,
-            json=payload,
-            timeout=request_timeout,
-            stream=stream,
-            verify=verify_ssl,
-        )
-
-        response.raise_for_status()
-        return response
+            # Use centralized error handling
+            from .._error_handling import SnowflakeErrorHandler
+            SnowflakeErrorHandler.log_and_raise(e, "build REST API URL")
 
     @staticmethod
     def get_effective_timeout(
