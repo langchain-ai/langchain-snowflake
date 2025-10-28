@@ -22,23 +22,16 @@ class SnowflakeTools:
     def bind_tools(
         self,
         tools: Sequence[Union[BaseTool, Callable, dict]],
-        auto_execute: bool = True,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, BaseMessage]:
         """Bind tools to the chat model using Snowflake Cortex Complete native tool calling.
 
         Args:
             tools: A list of tools to bind to the model
-            auto_execute: Whether to automatically execute planned tools (default: True)
             **kwargs: Additional arguments including tool_choice
 
         Returns:
             A new ChatSnowflake instance with tools bound and REST API enabled
-
-        Note:
-            tool_choice parameter is processed for LangChain compatibility but is not
-            supported by Snowflake Cortex REST API. The model will always auto-select
-            tools. A warning is logged if tool_choice is set to anything other than "auto".
         """
         # Convert LangChain tools to Snowflake tool format
         snowflake_tools = []
@@ -46,7 +39,6 @@ class SnowflakeTools:
             openai_tool = convert_to_openai_tool(tool_obj)
 
             # Convert OpenAI format to Snowflake format exactly as per official documentation
-            # Key fix: Include descriptions in properties to match official working examples
             input_schema = openai_tool["function"]["parameters"].copy()
 
             # Ensure properties have descriptions (required for tool calling to work properly)
@@ -92,8 +84,7 @@ class SnowflakeTools:
                 "_original_tools": list(tools),  # Store original tools for execution
                 "_tool_choice": tool_choice,
                 "_use_rest_api": True,  # This is the key - switch to REST API when tools are bound
-                "_auto_execute_tools": auto_execute,  # Control automatic tool execution
-                "max_tokens": self.max_tokens,  # Use configured max_tokens, not hardcoded value
+                "max_tokens": self.max_tokens,
             }
         )
 
@@ -317,18 +308,6 @@ The goal is to provide the most helpful, accurate, and relevant information to t
         # Combine all content parts
         full_content = "".join(content_parts)
 
-        # AUTO-EXECUTE TOOLS: Option 1 Implementation
-        executed_tool_results = []
-        if tool_calls and self._bound_tools and getattr(self, "_auto_execute_tools", True):
-            executed_tool_results = self._execute_planned_tools(tool_calls)
-
-            # Enhance content with tool execution results
-            if executed_tool_results:
-                full_content = self._combine_content_with_tool_results(full_content, executed_tool_results)
-                # IMPORTANT: Clear tool_calls when we've auto-executed and embedded results
-                # This prevents ToolNode from re-executing tools and creating duplicate ToolMessages
-                tool_calls = []
-
         # Create response message using shared factories
         from .utils import SnowflakeMetadataFactory
 
@@ -348,166 +327,8 @@ The goal is to provide the most helpful, accurate, and relevant information to t
         generation = ChatGeneration(message=message)
         return ChatResult(generations=[generation])
 
-    def _execute_planned_tools(self, tool_calls: List[Dict]) -> List[Dict]:
-        """Execute the tools that were planned by the LLM.
-
-        Args:
-            tool_calls: List of tool calls from LLM response
-
-        Returns:
-            List of tool execution results
-        """
-        results: List[Dict[str, Any]] = []
-
-        for tool_call in tool_calls:
-            try:
-                tool_name = tool_call.get("name")
-                tool_args = tool_call.get("args", {})
-                tool_id = tool_call.get("id", f"call_{len(results)}")
-
-                # Find the matching bound tool
-                matching_tool = self._find_bound_tool(tool_name)
-                if matching_tool:
-                    # Execute the tool
-                    result = matching_tool.invoke(tool_args)
-                    results.append(
-                        {
-                            "tool_call_id": tool_id,
-                            "tool_name": tool_name,
-                            "result": result,
-                            "status": "success",
-                        }
-                    )
-                else:
-                    results.append(
-                        {
-                            "tool_call_id": tool_id,
-                            "tool_name": tool_name,
-                            "result": f"Tool '{tool_name}' not found in bound tools",
-                            "status": "error",
-                        }
-                    )
-
-            except Exception as e:
-                results.append(
-                    {
-                        "tool_call_id": tool_call.get("id", f"call_{len(results)}"),
-                        "tool_name": tool_call.get("name", "unknown"),
-                        "result": f"Tool execution failed: {str(e)}",
-                        "status": "error",
-                    }
-                )
-                SnowflakeErrorHandler.log_error(
-                    "tool execution", Exception(f"Tool execution error for {tool_call.get('name')}: {e}"), logger
-                )
-
-        return results
-
-    async def _execute_planned_tools_async(self, tool_calls: List[Dict]) -> List[Dict]:
-        """Execute the tools that were planned by the LLM asynchronously.
-
-        Args:
-            tool_calls: List of tool calls from LLM response
-
-        Returns:
-            List of tool execution results
-        """
-        import asyncio
-
-        # Execute tools concurrently for better performance
-        async def execute_single_tool(tool_call):
-            try:
-                tool_name = tool_call.get("name")
-                tool_args = tool_call.get("args", {})
-                tool_id = tool_call.get("id", f"call_async_{id(tool_call)}")
-
-                # Find the matching bound tool
-                matching_tool = self._find_bound_tool(tool_name)
-                if matching_tool:
-                    # Use async version if available, otherwise fallback to sync in thread
-                    if hasattr(matching_tool, "ainvoke"):
-                        result = await matching_tool.ainvoke(tool_args)
-                    else:
-                        result = await asyncio.to_thread(matching_tool.invoke, tool_args)
-
-                    return {
-                        "tool_call_id": tool_id,
-                        "tool_name": tool_name,
-                        "result": result,
-                        "status": "success",
-                    }
-                else:
-                    return {
-                        "tool_call_id": tool_id,
-                        "tool_name": tool_name,
-                        "result": f"Tool '{tool_name}' not found in bound tools",
-                        "status": "error",
-                    }
-
-            except Exception as e:
-                SnowflakeErrorHandler.log_error(
-                    "async tool execution",
-                    Exception(f"Async tool execution error for {tool_call.get('name')}: {e}"),
-                    logger,
-                )
-                return {
-                    "tool_call_id": tool_call.get("id", f"call_async_{id(tool_call)}"),
-                    "tool_name": tool_call.get("name", "unknown"),
-                    "result": f"Tool execution failed: {str(e)}",
-                    "status": "error",
-                }
-
-        # Execute all tools concurrently
-        if tool_calls:
-            results = await asyncio.gather(*[execute_single_tool(tc) for tc in tool_calls])
-            return list(results)
-        else:
-            return []
-
-    def _find_bound_tool(self, tool_name: str):
-        """Find a bound tool by name."""
-        if not hasattr(self, "_bound_tools") or not self._bound_tools:
-            return None
-
-        # _bound_tools contains the original tools passed to bind_tools()
-        # They might be stored differently, so we need to check the original tools
-        if hasattr(self, "_original_tools"):
-            for tool in self._original_tools:
-                if hasattr(tool, "name") and tool.name == tool_name:
-                    return tool
-
-        # Fallback: check _bound_tools directly
-        for tool in self._bound_tools:
-            if hasattr(tool, "name") and tool.name == tool_name:
-                return tool
-            # Also check if it's a dict with tool info
-            if isinstance(tool, dict) and tool.get("name") == tool_name:
-                # This is a converted tool format, we need the original
-                continue
-
-        return None
-
-    def _combine_content_with_tool_results(self, original_content: str, tool_results: List[Dict]) -> str:
-        """Combine the original LLM content with tool execution results."""
-        if not tool_results:
-            return original_content
-
-        # Build enhanced content
-        enhanced_parts = [original_content]
-
-        # Add tool results
-        if any(result["status"] == "success" for result in tool_results):
-            enhanced_parts.append("\n\nTool Execution Results:")
-            for result in tool_results:
-                if result["status"] == "success":
-                    enhanced_parts.append(f"\n• {result['tool_name']}: {result['result']}")
-                else:
-                    enhanced_parts.append(f"\n• {result['tool_name']}: ❌ {result['result']}")
-
-        return "".join(enhanced_parts)
-
     async def _parse_rest_api_response_async(self, response, original_messages: List[BaseMessage]) -> ChatResult:
-        """Async version of _parse_rest_api_response with async tool execution."""
+        """Async version of _parse_rest_api_response."""
 
         # Use lists and dicts to store mutable data
         content_parts = []
@@ -537,18 +358,6 @@ The goal is to provide the most helpful, accurate, and relevant information to t
 
         # Combine all content parts
         full_content = "".join(content_parts)
-
-        # AUTO-EXECUTE TOOLS: Async Version
-        executed_tool_results = []
-        if tool_calls and self._bound_tools and getattr(self, "_auto_execute_tools", True):
-            executed_tool_results = await self._execute_planned_tools_async(tool_calls)
-
-            # Enhance content with tool execution results
-            if executed_tool_results:
-                full_content = self._combine_content_with_tool_results(full_content, executed_tool_results)
-                # IMPORTANT: Clear tool_calls when we've auto-executed and embedded results
-                # This prevents ToolNode from re-executing tools and creating duplicate ToolMessages
-                tool_calls = []
 
         # Create response message using shared factories
         from .utils import SnowflakeMetadataFactory
