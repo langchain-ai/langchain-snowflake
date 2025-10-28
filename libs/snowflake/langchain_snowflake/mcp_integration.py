@@ -18,223 +18,255 @@ Example:
     > response = await agent.ainvoke("list databases")
 """
 
-import asyncio
-import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 from langchain.tools import Tool
 
-from ._error_handling import SnowflakeToolErrorHandler
+from ._error_handling import SnowflakeErrorHandler, SnowflakeToolErrorHandler
 
 logger = logging.getLogger(__name__)
 
 
 class MCPToolWrapper:
     """
-    A wrapper that stores MCP tool references and creates a compatible Tool.
+    Wrapper to make MCP tools compatible with LangChain's tool interface.
+
+    This wrapper handles the conversion between LangChain's tool calling format
+    and MCP's tool execution format, ensuring seamless integration.
     """
 
     def __init__(self, mcp_tool, mcp_session):
+        """Initialize the MCP tool wrapper.
+
+        Args:
+            mcp_tool: The MCP tool instance
+            mcp_session: The MCP session for tool execution
+        """
         self.mcp_tool = mcp_tool
         self.mcp_session = mcp_session
 
-        # Create the actual Tool instance
-        self._tool = self._create_tool()
+    def run(self, *args, **kwargs) -> str:
+        """Execute the MCP tool with LangChain compatibility.
 
-    def _create_tool(self) -> Tool:
-        """Create the LangChain Tool instance"""
+        Args:
+            *args: Positional arguments for the tool
+            **kwargs: Keyword arguments for the tool
 
-        async def execute_mcp_tool(args: Dict[str, Any]) -> str:
-            """Execute the MCP tool via the MCP protocol"""
-            try:
-                logger.debug(f"Executing MCP tool {self.mcp_tool.name} with args: {args}")
+        Returns:
+            Tool execution result as string
+        """
+        try:
+            SnowflakeErrorHandler.log_debug("MCP tool execution", f"executing {self.mcp_tool.name} with args: {args}")
 
-                # Execute via MCP session
-                result = await self.mcp_session.call_tool(self.mcp_tool.name, args)
+            # Convert LangChain args to MCP format
+            if args and len(args) == 1 and isinstance(args[0], str):
+                # Single string argument - common case
+                tool_input = args[0]
+            elif kwargs:
+                # Keyword arguments - convert to MCP format
+                tool_input = kwargs
+            else:
+                # Multiple positional arguments
+                tool_input = list(args)
 
-                # Format result for ChatSnowflake
-                if hasattr(result, "content"):
-                    return str(result.content)
-                elif isinstance(result, dict):
-                    return json.dumps(result, indent=2)
-                else:
-                    return str(result)
+            # Execute MCP tool
+            result = self.mcp_session.call_tool(self.mcp_tool.name, tool_input)
 
-            except Exception as e:
-                # Centralized error handling for consistent MCP tool error responses
-                return SnowflakeToolErrorHandler.handle_tool_error(
-                    error=e,
-                    tool_name=self.mcp_tool.name,
-                    operation="execute MCP tool",
-                    query=str(args),
-                )
+            # Convert result to string format expected by LangChain
+            if isinstance(result, dict):
+                return str(result)
+            elif isinstance(result, list):
+                return "\n".join(str(item) for item in result)
+            else:
+                return str(result)
 
-        def sync_execute(**args):
-            """Sync wrapper that runs async MCP tool execution"""
-            try:
-                # Handle async context
-                loop = asyncio.get_running_loop()
-                task = loop.create_task(execute_mcp_tool(args))
-                return asyncio.run_coroutine_threadsafe(task, loop).result()
-            except RuntimeError:
-                # No running loop, safe to use asyncio.run
-                return asyncio.run(execute_mcp_tool(args))
+        except Exception as e:
+            # Centralized error handling for consistent MCP tool error responses
+            return SnowflakeToolErrorHandler.handle_tool_error(
+                error=e,
+                tool_name=self.mcp_tool.name,
+                operation="MCP tool execution",
+                logger_instance=logger,
+            )
 
-        # Create the Tool with proper attributes
-        return Tool(
-            name=self.mcp_tool.name,
-            description=f"MCP Tool: {self.mcp_tool.description}",
-            func=sync_execute,
-            coroutine=execute_mcp_tool,
-            args_schema=getattr(self.mcp_tool, "args_schema", None),
+
+def create_langchain_tool_from_mcp(mcp_tool, mcp_session) -> Tool:
+    """
+    Convert an MCP tool to a LangChain Tool.
+
+    Args:
+        mcp_tool: The MCP tool to convert
+        mcp_session: The MCP session for tool execution
+
+    Returns:
+        LangChain Tool instance
+
+    Raises:
+        ValueError: If tool conversion fails
+    """
+    try:
+        # Create wrapper for MCP tool
+        wrapper = MCPToolWrapper(mcp_tool, mcp_session)
+
+        # Extract tool metadata
+        name = getattr(mcp_tool, "name", "unknown_mcp_tool")
+        description = getattr(mcp_tool, "description", f"MCP tool: {name}")
+
+        # Create LangChain Tool
+        langchain_tool = Tool(
+            name=name,
+            description=description,
+            func=wrapper.run,
         )
 
-    def get_tool(self) -> Tool:
-        """Get the wrapped Tool instance"""
-        return self._tool
+        return langchain_tool
 
-    # Delegate Tool methods/attributes
-    def __getattr__(self, name):
-        """Delegate attribute access to the wrapped Tool"""
-        return getattr(self._tool, name)
+    except Exception as e:
+        SnowflakeToolErrorHandler.handle_tool_error(
+            error=e, tool_name="unknown", operation="convert MCP tool to LangChain Tool"
+        )
+        raise
 
 
-def create_mcp_tool_wrapper(mcp_tool, mcp_session) -> Tool:
+def filter_compatible_mcp_tools(
+    mcp_tools: List[Any], include_patterns: Optional[List[str]] = None, exclude_patterns: Optional[List[str]] = None
+) -> List[Any]:
     """
-    Create a LangChain Tool that wraps an MCP tool for ChatSnowflake compatibility.
-
-    This function creates a new Tool instance that bridges the gap between MCP
-    protocol execution and Snowflake's expected tool format.
+    Filter MCP tools based on compatibility and patterns.
 
     Args:
-        mcp_tool: The original MCP tool from load_mcp_tools()
-        mcp_session: Active MCP ClientSession for tool execution
+        mcp_tools: List of MCP tools to filter
+        include_patterns: Patterns to include (tool names matching these patterns)
+        exclude_patterns: Patterns to exclude (tool names matching these patterns)
 
     Returns:
-        A LangChain Tool that executes via MCP protocol
-    """
-    wrapper = MCPToolWrapper(mcp_tool, mcp_session)
-    return wrapper.get_tool()
-
-
-def create_snowflake_compatible_tools(
-    mcp_tools: List,
-    mcp_session,
-    tool_prefix: Optional[str] = None,
-    include_tools: Optional[List[str]] = None,
-    exclude_tools: Optional[List[str]] = None,
-) -> List[Tool]:
-    """
-    Convert MCP tools to Snowflake-compatible tools for bind_tools()
-
-    Args:
-        mcp_tools: List of MCP tools from load_mcp_tools()
-        mcp_session: Active MCP ClientSession
-        tool_prefix: Optional prefix for tool names (e.g., "mcp_")
-        include_tools: If provided, only include tools with these names
-        exclude_tools: If provided, exclude tools with these names
-
-    Returns:
-        List of LangChain Tools compatible with ChatSnowflake.bind_tools()
-
-    Example:
-        >>> tools = create_snowflake_compatible_tools(
-        ...     mcp_tools,
-        ...     mcp_session,
-        ...     include_tools=["cortex_search", "run_sql"]
-        ... )
+        List of compatible MCP tools
     """
     compatible_tools = []
 
     for mcp_tool in mcp_tools:
-        # Apply filters
-        if include_tools and mcp_tool.name not in include_tools:
-            continue
-        if exclude_tools and mcp_tool.name in exclude_tools:
-            continue
-
         try:
+            # Basic compatibility check
+            if not hasattr(mcp_tool, "name"):
+                continue
+
+            tool_name = mcp_tool.name.lower()
+
+            # Apply include patterns
+            if include_patterns:
+                if not any(pattern.lower() in tool_name for pattern in include_patterns):
+                    continue
+
+            # Apply exclude patterns
+            if exclude_patterns:
+                if any(pattern.lower() in tool_name for pattern in exclude_patterns):
+                    continue
+
             # Debug: Check tool attributes
-            logger.debug(f"Processing MCP tool: {mcp_tool.name}")
-            logger.debug(f"Tool type: {type(mcp_tool)}")
-            logger.debug(f"Tool attributes: {dir(mcp_tool)}")
+            SnowflakeErrorHandler.log_debug("MCP tool processing", f"processing {mcp_tool.name}")
+            SnowflakeErrorHandler.log_debug("MCP tool processing", f"tool type: {type(mcp_tool)}")
+            SnowflakeErrorHandler.log_debug("MCP tool processing", f"tool attributes: {dir(mcp_tool)}")
 
-            # Optionally add prefix to avoid name conflicts
-            if tool_prefix:
-                original_name = mcp_tool.name
-                mcp_tool.name = f"{tool_prefix}{original_name}"
+            # Additional compatibility checks can be added here
+            # For now, we accept tools with basic attributes
 
-            wrapper = create_mcp_tool_wrapper(mcp_tool, mcp_session)
-
-            # Verify wrapper was created correctly (it's now a Tool instance)
-            if not hasattr(wrapper, "name") or not hasattr(wrapper, "description"):
-                raise ValueError("Wrapper missing Tool attributes")
-            if not hasattr(wrapper, "func"):
-                raise ValueError("Wrapper missing func attribute")
-
-            compatible_tools.append(wrapper)
-            logger.info(f"Successfully wrapped MCP tool: {mcp_tool.name}")
+            compatible_tools.append(mcp_tool)
+            SnowflakeErrorHandler.log_info("MCP tool wrapping", f"successfully wrapped {mcp_tool.name}")
 
         except Exception as e:
-            # Use centralized error handling for MCP tool wrapping failures
+            # Log error but continue processing other tools
             tool_name = getattr(mcp_tool, "name", "unknown")
             SnowflakeToolErrorHandler.handle_tool_error(
                 error=e, tool_name=tool_name, operation="wrap MCP tool for Snowflake compatibility"
             )
-            # Continue processing other tools (don't fail entire batch for one tool)
             continue
 
-    logger.info(f"Created {len(compatible_tools)} Snowflake-compatible MCP tools")
+    SnowflakeErrorHandler.log_info(
+        "MCP tool creation", f"created {len(compatible_tools)} Snowflake-compatible MCP tools"
+    )
     return compatible_tools
 
 
 def bind_mcp_tools(
     llm,
-    mcp_tools: List,
+    mcp_tools: List[Any],
     mcp_session,
-    auto_execute: bool = True,
-    tool_prefix: Optional[str] = None,
-    include_tools: Optional[List[str]] = None,
-    exclude_tools: Optional[List[str]] = None,
-    **kwargs,
+    include_patterns: Optional[List[str]] = None,
+    exclude_patterns: Optional[List[str]] = None,
+    **bind_kwargs,
 ):
     """
-    Convenience function to bind MCP tools to ChatSnowflake
+    Bind MCP tools to a ChatSnowflake instance.
 
-    This is the main entry point for MCP integration. It handles the
-    conversion of MCP tools to Snowflake-compatible format and binds
-    them to the ChatSnowflake instance.
+    This function filters MCP tools for compatibility, converts them to LangChain Tools,
+    and binds them to the provided LLM using bind_tools().
 
     Args:
-        llm: ChatSnowflake instance
-        mcp_tools: List of MCP tools from load_mcp_tools()
-        mcp_session: Active MCP ClientSession
-        auto_execute: Whether to auto-execute tools (default: True)
-        tool_prefix: Optional prefix for tool names
-        include_tools: If provided, only include tools with these names
-        exclude_tools: If provided, exclude tools with these names
-        **kwargs: Additional arguments for bind_tools
+        llm: ChatSnowflake instance or compatible LLM
+        mcp_tools: List of MCP tools to bind
+        mcp_session: MCP session for tool execution
+        include_patterns: Optional patterns to include specific tools
+        exclude_patterns: Optional patterns to exclude specific tools
+        **bind_kwargs: Additional arguments passed to bind_tools()
 
     Returns:
-        ChatSnowflake instance with MCP tools bound
+        LLM instance with bound MCP tools
 
     Example:
+        >>> from langchain_snowflake import ChatSnowflake, bind_mcp_tools
+        >>> from langchain_mcp_adapters import load_mcp_tools
+        >>>
+        >>> # Load MCP tools
+        >>> mcp_tools = await load_mcp_tools(mcp_session)
+        >>>
+        >>> # Create ChatSnowflake instance
+        >>> llm = ChatSnowflake(...)
+        >>>
+        >>> # Bind MCP tools
         >>> agent = bind_mcp_tools(
         ...     llm,
         ...     mcp_tools,
         ...     mcp_session,
-        ...     auto_execute=True,
-        ...     include_tools=["cortex_search", "run_sql"]
+        ...     include_patterns=["database", "query"],
+        ...     exclude_patterns=["admin"]
         ... )
-        >>> response = await agent.ainvoke("search for customer data")
+        >>>
+        >>> # Use the agent
+        >>> response = await agent.ainvoke("List all databases")
     """
-    compatible_tools = create_snowflake_compatible_tools(
-        mcp_tools, mcp_session, tool_prefix=tool_prefix, include_tools=include_tools, exclude_tools=exclude_tools
-    )
+    # Filter compatible tools
+    compatible_tools = filter_compatible_mcp_tools(mcp_tools, include_patterns, exclude_patterns)
 
     if not compatible_tools:
-        logger.warning("No compatible MCP tools found. Check your filters and MCP connection.")
+        SnowflakeErrorHandler.log_warning_and_fallback(
+            error=Exception("No compatible MCP tools found"),
+            operation="MCP tool filtering",
+            fallback_action="returning original LLM without tools",
+        )
         return llm
 
-    return llm.bind_tools(compatible_tools, auto_execute=auto_execute, **kwargs)
+    # Convert to LangChain Tools
+    langchain_tools = []
+    for mcp_tool in compatible_tools:
+        try:
+            langchain_tool = create_langchain_tool_from_mcp(mcp_tool, mcp_session)
+            langchain_tools.append(langchain_tool)
+        except Exception as e:
+            # Log error but continue with other tools
+            tool_name = getattr(mcp_tool, "name", "unknown")
+            SnowflakeToolErrorHandler.handle_tool_error(
+                error=e, tool_name=tool_name, operation="convert MCP tool to LangChain Tool"
+            )
+            continue
+
+    # Bind tools to LLM
+    if langchain_tools:
+        return llm.bind_tools(langchain_tools, **bind_kwargs)
+    else:
+        SnowflakeErrorHandler.log_warning_and_fallback(
+            error=Exception("No LangChain tools created from MCP tools"),
+            operation="MCP tool conversion",
+            fallback_action="returning original LLM without tools",
+        )
+        return llm
