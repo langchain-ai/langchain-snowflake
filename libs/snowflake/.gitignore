@@ -148,6 +148,10 @@ dmypy.json
 *.jwt
 *.token
 *auth*
+*build*
+*supervisor*
+*studio*
+docs/*agents*
 
 # Jupyter notebook outputs (may contain sensitive data)
 *.ipynb_checkpoints/

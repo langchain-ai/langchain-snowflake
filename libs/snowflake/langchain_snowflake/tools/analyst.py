@@ -3,10 +3,8 @@
 import asyncio
 import json
 import logging
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, Optional, Tuple, Type, Union
 
-import aiohttp
-import requests
 from langchain_core.callbacks import (
     AsyncCallbackManagerForToolRun,
     CallbackManagerForToolRun,
@@ -15,8 +13,8 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 from snowflake.snowpark import Session
 
-from .._connection import SnowflakeAuthUtils, SnowflakeConnectionMixin
-from .._error_handling import SnowflakeRestApiErrorHandler, SnowflakeToolErrorHandler
+from .._connection import RestApiClient, RestApiRequestBuilder, SnowflakeConnectionMixin
+from .._error_handling import SnowflakeErrorHandler, SnowflakeToolErrorHandler
 from ._base import SnowflakeCortexAnalystInput
 
 logger = logging.getLogger(__name__)
@@ -93,7 +91,7 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
         "Converts natural language questions into SQL queries using Snowflake Cortex Analyst. "
         "Use this tool when you need to query structured data in Snowflake databases."
     )
-    args_schema: Type[BaseModel] = SnowflakeCortexAnalystInput
+    args_schema: Union[Type[BaseModel], Dict[str, Any], None] = SnowflakeCortexAnalystInput
 
     # Additional fields specific to Cortex Analyst (connection fields inherited from SnowflakeConnectionMixin)
     role: Optional[str] = Field(default=None, description="Snowflake role to use")
@@ -132,104 +130,79 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
 
         return payload
 
-    def _make_rest_api_request(self, query: str, semantic_model: Optional[str] = None) -> str:
-        """Make REST API request to Cortex Analyst service."""
+    # ============================================================================
+    # Shared Helper Methods
+    # ============================================================================
+
+    def _prepare_analyst_request(self, query: str, semantic_model: Optional[str] = None) -> Tuple[Dict[str, Any], str]:
+        """Prepare Cortex Analyst request configuration.
+
+        Args:
+            query: Natural language query to convert to SQL
+            semantic_model: Optional semantic model to use
+
+        Returns:
+            Tuple of (request_config, operation_name)
+        """
         session = self._get_session()
-
-        # Build URL
-        try:
-            conn = session._conn._conn
-            base_url = f"https://{conn.host}"
-        except Exception:
-            # Fallback to constructing URL from account
-            account_url = self.account or "your-account"
-            base_url = f"https://{account_url}.snowflakecomputing.com"
-
-        endpoint = "/api/v2/cortex/analyst/message"
-        url = base_url + endpoint
-
-        # Make request using shared auth utilities
         payload = self._build_rest_api_payload(query, semantic_model)
 
+        request_config = RestApiRequestBuilder.cortex_analyst_request(
+            session=session,
+            method="POST",
+            payload=payload,
+            request_timeout=self.request_timeout,
+            verify_ssl=self.verify_ssl,
+            stream=self.enable_streaming,
+        )
+
+        operation_name = "Cortex Analyst REST API request"
+        return request_config, operation_name
+
+    def _handle_analyst_error(self, error: Exception, operation: str) -> str:
+        """Handle Cortex Analyst errors consistently.
+
+        Args:
+            error: Exception that occurred
+            operation: Operation description
+
+        Returns:
+            Error message string
+        """
+        error_msg = SnowflakeToolErrorHandler.handle_rest_api_error(
+            error=error,
+            tool_name="cortex_analyst",
+            operation=operation,
+            logger_instance=logger,
+        )
+        return error_msg
+
+    # ============================================================================
+    # REST API Methods
+    # ============================================================================
+
+    def _make_rest_api_request(self, query: str, semantic_model: Optional[str] = None) -> str:
+        """Make REST API request to Cortex Analyst service using unified client."""
         try:
-            # Get effective timeout respecting Snowflake parameter hierarchy
-            timeout = self._get_effective_timeout()
-
-            # Use shared auth utilities to get proper headers
-            headers = SnowflakeAuthUtils.get_rest_api_headers(session=session, account=self.account, user=self.user)
-
-            # Make secure request with proper SSL verification and timeout
-            response = requests.post(
-                url,
-                json=payload,
-                headers=headers,
-                timeout=timeout,  # Respect Snowflake parameter hierarchy
-                verify=True,  # Always use SSL verification for security
-                stream=self.enable_streaming,
-            )
-            response.raise_for_status()
-
-            data = SnowflakeRestApiErrorHandler.safe_parse_json_response(
-                response, "Cortex Analyst REST API request", logger
-            )
-            return self._parse_rest_api_response(data)
+            request_config, operation_name = self._prepare_analyst_request(query, semantic_model)
+            response_data = RestApiClient.make_sync_request(request_config, operation_name)
+            return self._parse_rest_api_response(response_data)
 
         except Exception as e:
-            # Log the error for debugging
-            error_msg = SnowflakeToolErrorHandler.handle_rest_api_error(
-                error=e,
-                tool_name="cortex_analyst",
-                operation="REST API request",
-                logger_instance=logger,
-            )
-            logger.warning(f"REST API request failed: {error_msg}")
-            # Re-raise to trigger fallback logic
+            # Log the error for debugging and re-raise to trigger fallback logic
+            self._handle_analyst_error(e, "REST API request")
             raise e
 
     async def _make_rest_api_request_async(self, query: str, semantic_model: Optional[str] = None) -> str:
-        """Make async REST API request to Snowflake Cortex Analyst using aiohttp."""
-        session = self._get_session()
-        payload = self._build_rest_api_payload(query, semantic_model)
-
-        # Build URL manually (matches sync version pattern)
+        """Make async REST API request to Snowflake Cortex Analyst using unified client."""
         try:
-            conn = session._conn._conn
-            base_url = f"https://{conn.host}"
-        except Exception:
-            account_url = self.account or "your-account"
-            base_url = f"https://{account_url}.snowflakecomputing.com"
-
-        endpoint = "/api/v2/cortex/analyst/message"
-        url = base_url + endpoint
-
-        # Use shared auth utilities to get proper headers (consistent with sync version)
-        headers = SnowflakeAuthUtils.get_rest_api_headers(session=session, account=self.account, user=self.user)
-
-        try:
-            timeout = aiohttp.ClientTimeout(total=self.request_timeout)
-            async with aiohttp.ClientSession(timeout=timeout) as http_session:
-                async with http_session.post(
-                    url,
-                    json=payload,
-                    headers=headers,
-                    ssl=self.verify_ssl,
-                ) as response:
-                    response.raise_for_status()
-                    data = await SnowflakeRestApiErrorHandler.safe_parse_json_response_async(
-                        response, "async REST API request", logger
-                    )
-                    return self._parse_rest_api_response(data)
+            request_config, operation_name = self._prepare_analyst_request(query, semantic_model)
+            response_data = await RestApiClient.make_async_request(request_config, f"async {operation_name}")
+            return self._parse_rest_api_response(response_data)
 
         except Exception as e:
-            # Log the error for debugging
-            error_msg = SnowflakeToolErrorHandler.handle_rest_api_error(
-                error=e,
-                tool_name="cortex_analyst",
-                operation="async REST API request",
-                logger_instance=logger,
-            )
-            logger.warning(f"Async REST API request failed: {error_msg}")
-            # Re-raise to trigger fallback logic
+            # Log the error for debugging and re-raise to trigger fallback logic
+            self._handle_analyst_error(e, "async REST API request")
             raise e
 
     def _parse_rest_api_response(self, data: Dict[str, Any]) -> str:
@@ -286,19 +259,19 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
 
         try:
             # Use CORTEX.COMPLETE for text-to-SQL since CORTEX.ANALYST doesn't exist
-            logger.info("Using Cortex Complete for text-to-SQL fallback")
+            SnowflakeErrorHandler.log_info("SQL fallback", "Using Cortex Complete for text-to-SQL fallback", logger)
             return self._fallback_text2sql(session, query)
 
         except Exception as e:
             # Log the SQL fallback error
-            error_msg = SnowflakeToolErrorHandler.handle_sql_error(
+            SnowflakeToolErrorHandler.handle_sql_error(
                 error=e,
                 tool_name="cortex_analyst",
                 sql_query=query,
                 operation="SQL function fallback",
                 logger_instance=logger,
             )
-            logger.error(f"SQL fallback failed: {error_msg}")
+            # Note: SnowflakeToolErrorHandler.handle_sql_error already logs the error
             # Re-raise so the main error handler can decide what to do
             raise e
 
@@ -312,19 +285,21 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
 
         try:
             # Use CORTEX.COMPLETE for text-to-SQL since CORTEX.ANALYST doesn't exist
-            logger.info("Using async Cortex Complete for text-to-SQL fallback")
+            SnowflakeErrorHandler.log_info(
+                "async SQL fallback", "Using async Cortex Complete for text-to-SQL fallback", logger
+            )
             return await self._afallback_text2sql(session, query)
 
         except Exception as e:
             # Log the async SQL fallback error
-            error_msg = SnowflakeToolErrorHandler.handle_sql_error(
+            SnowflakeToolErrorHandler.handle_sql_error(
                 error=e,
                 tool_name="cortex_analyst",
                 sql_query=query,
                 operation="async SQL function fallback",
                 logger_instance=logger,
             )
-            logger.error(f"Async SQL fallback failed: {error_msg}")
+            # Note: SnowflakeToolErrorHandler.handle_sql_error already logs the error
             # Re-raise so the main error handler can decide what to do
             raise e
 
@@ -353,14 +328,18 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
         except Exception as e:
             # Try fallback method if REST API fails
             if self.use_rest_api:
-                logger.info("Falling back to SQL function")
+                SnowflakeErrorHandler.log_info("fallback strategy", "Falling back to SQL function", logger)
                 try:
                     return self._fallback_sql_function(query, semantic_model)
                 except Exception as fallback_error:
                     # Both REST API and SQL fallback failed
-                    logger.error(
-                        f"""Both REST API and SQL fallback failed. 
-                                 REST API error: {e}, Fallback error: {fallback_error}"""
+                    SnowflakeErrorHandler.log_error(
+                        "complete fallback failure",
+                        Exception(
+                            f"Both REST API and SQL fallback failed. "
+                            f"REST API error: {e}, Fallback error: {fallback_error}"
+                        ),
+                        logger,
                     )
                     return SnowflakeToolErrorHandler.handle_tool_error(
                         error=fallback_error,
@@ -400,14 +379,18 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
         except Exception as e:
             # Try fallback method if REST API fails
             if self.use_rest_api:
-                logger.info("Falling back to async SQL function")
+                SnowflakeErrorHandler.log_info("async fallback strategy", "Falling back to async SQL function", logger)
                 try:
                     return await self._fallback_sql_function_async(query, semantic_model)
                 except Exception as fallback_error:
                     # Both async REST API and SQL fallback failed
-                    logger.error(
-                        f"""Both async REST API and SQL fallback failed. 
-                                 REST API error: {e}, Fallback error: {fallback_error}"""
+                    SnowflakeErrorHandler.log_error(
+                        "complete async fallback failure",
+                        Exception(
+                            f"Both async REST API and SQL fallback failed. "
+                            f"REST API error: {e}, Fallback error: {fallback_error}"
+                        ),
+                        logger,
                     )
                     return SnowflakeToolErrorHandler.handle_tool_error(
                         error=fallback_error,

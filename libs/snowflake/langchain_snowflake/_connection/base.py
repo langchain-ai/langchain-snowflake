@@ -6,6 +6,7 @@ from typing import Any, Optional
 from pydantic import Field, SecretStr
 from snowflake.snowpark import Session
 
+from .._error_handling import SnowflakeErrorHandler
 from .session_manager import SnowflakeSessionManager
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,9 @@ class SnowflakeConnectionMixin:
         default=True,
         description="Whether to respect session STATEMENT_TIMEOUT_IN_SECONDS parameter (default: True)",
     )
+
+    # SSL configuration
+    verify_ssl: bool = Field(default=True, description="Whether to verify SSL certificates for HTTPS requests")
 
     def __init__(self, **kwargs: Any) -> None:
         """Initialize the mixin with session caching."""
@@ -149,8 +153,7 @@ class SnowflakeConnectionMixin:
 
         except Exception as e:
             # Fallback to word count estimation if Cortex function unavailable
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.debug(f"Could not use CORTEX.COUNT_TOKENS, falling back to word count: {e}")
+            SnowflakeErrorHandler.log_debug(
+                "token counting fallback", f"Could not use CORTEX.COUNT_TOKENS, falling back to word count: {e}", logger
+            )
             return len(text.split())

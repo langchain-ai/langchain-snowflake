@@ -1,9 +1,8 @@
 """Basic Snowflake Cortex AI function tools for sentiment, summarization, translation, and completion."""
 
-import asyncio
 import json
 import logging
-from typing import Optional, Type
+from typing import Any, Dict, Optional, Type, Union
 
 from langchain_core.callbacks import (
     AsyncCallbackManagerForToolRun,
@@ -12,8 +11,7 @@ from langchain_core.callbacks import (
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
-from .._connection import SnowflakeConnectionMixin
-from .._error_handling import SnowflakeToolErrorHandler
+from .._connection import SnowflakeConnectionMixin, SqlExecutionClient
 from ._base import (
     CortexCompleteInput,
     CortexSentimentInput,
@@ -24,61 +22,93 @@ from ._base import (
 logger = logging.getLogger(__name__)
 
 
+# ============================================================================
+# Cortex Function Tools
+# ============================================================================
+
+
 class CortexSentimentTool(BaseTool, SnowflakeConnectionMixin):
     """Analyze sentiment using Snowflake Cortex SENTIMENT function."""
 
     name: str = "cortex_sentiment"
     description: str = "Analyze sentiment of text using Snowflake Cortex SENTIMENT function"
-    args_schema: Type[BaseModel] = CortexSentimentInput
+    args_schema: Union[Type[BaseModel], Dict[str, Any], None] = CortexSentimentInput
 
     def __init__(self, **kwargs):
         """Initialize the sentiment tool with proper session attribute."""
-        # Call the parent initializer
+        # Extract session from kwargs if provided
+        session = kwargs.pop("session", None)
+
+        # Call the parent initializer with remaining kwargs
         super().__init__(**kwargs)
-        # Ensure _session attribute is initialized (from SnowflakeConnectionMixin)
-        if not hasattr(self, "_session"):
-            self._session = None
+
+        # Initialize session attribute (from SnowflakeConnectionMixin) using object.__setattr__ to bypass Pydantic
+        if session is not None:
+            object.__setattr__(self, "_session", session)
+        elif not hasattr(self, "_session"):
+            object.__setattr__(self, "_session", None)
 
     def _run(self, text: str, *, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
         """Analyze sentiment of the given text."""
-        session = self._get_session()
+        execution_result = SqlExecutionClient.execute_cortex_function(
+            session=self._get_session(), function_name="SENTIMENT", args=[text], operation_name="analyze sentiment"
+        )
 
-        try:
-            sql = f"""
-            SELECT SNOWFLAKE.CORTEX.SENTIMENT(
-                '{text.replace("'", "''")}'
-            ) as sentiment_score
-            """
+        if not execution_result["success"]:
+            return execution_result["error"]
 
-            result = session.sql(sql).collect()
+        result = execution_result["result"]
+        if result:
+            sentiment_score = result[0]["RESULT"]
 
-            if result:
-                sentiment_score = result[0]["SENTIMENT_SCORE"]
-
-                # Interpret the sentiment score
-                if sentiment_score > 0.1:
-                    sentiment_label = "positive"
-                elif sentiment_score < -0.1:
-                    sentiment_label = "negative"
-                else:
-                    sentiment_label = "neutral"
-
-                return json.dumps(
-                    {
-                        "text": text,
-                        "sentiment_score": float(sentiment_score),
-                        "sentiment_label": sentiment_label,
-                    }
-                )
+            # Interpret the sentiment score
+            if sentiment_score > 0.1:
+                sentiment_label = "positive"
+            elif sentiment_score < -0.1:
+                sentiment_label = "negative"
             else:
-                return json.dumps({"error": "No sentiment analysis result"})
+                sentiment_label = "neutral"
 
-        except Exception as e:
-            return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexSentimentTool", "analyze sentiment")
+            return json.dumps(
+                {
+                    "text": text,
+                    "sentiment_score": float(sentiment_score),
+                    "sentiment_label": sentiment_label,
+                }
+            )
+        else:
+            return json.dumps({"error": "No sentiment analysis result"})
 
     async def _arun(self, text: str, *, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
-        """Async analyze sentiment by delegating to sync method with asyncio.to_thread."""
-        return await asyncio.to_thread(self._run, text, run_manager=run_manager)
+        """Async analyze sentiment using native async SqlExecutionClient."""
+        execution_result = await SqlExecutionClient.execute_cortex_function_async(
+            session=self._get_session(), function_name="SENTIMENT", args=[text], operation_name="analyze sentiment"
+        )
+
+        if not execution_result["success"]:
+            return execution_result["error"]
+
+        result = execution_result["result"]
+        if result:
+            sentiment_score = result[0]["RESULT"]
+
+            # Interpret the sentiment score
+            if sentiment_score > 0.1:
+                sentiment_label = "positive"
+            elif sentiment_score < -0.1:
+                sentiment_label = "negative"
+            else:
+                sentiment_label = "neutral"
+
+            return json.dumps(
+                {
+                    "text": text,
+                    "sentiment_score": float(sentiment_score),
+                    "sentiment_label": sentiment_label,
+                }
+            )
+        else:
+            return json.dumps({"error": "No sentiment analysis result"})
 
 
 class CortexSummarizerTool(BaseTool, SnowflakeConnectionMixin):
@@ -86,48 +116,67 @@ class CortexSummarizerTool(BaseTool, SnowflakeConnectionMixin):
 
     name: str = "cortex_summarize"
     description: str = "Summarize text using Snowflake Cortex SUMMARIZE function"
-    args_schema: Type[BaseModel] = CortexSummarizerInput
+    args_schema: Union[Type[BaseModel], Dict[str, Any], None] = CortexSummarizerInput
 
     def __init__(self, **kwargs):
         """Initialize the summarizer tool with proper session attribute."""
-        # Call the parent initializer
+        # Extract session from kwargs if provided
+        session = kwargs.pop("session", None)
+
+        # Call the parent initializer with remaining kwargs
         super().__init__(**kwargs)
-        # Ensure _session attribute is initialized (from SnowflakeConnectionMixin)
-        if not hasattr(self, "_session"):
-            self._session = None
+
+        # Initialize session attribute (from SnowflakeConnectionMixin) using object.__setattr__ to bypass Pydantic
+        if session is not None:
+            object.__setattr__(self, "_session", session)
+        elif not hasattr(self, "_session"):
+            object.__setattr__(self, "_session", None)
 
     def _run(self, text: str, *, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
         """Summarize the given text."""
-        session = self._get_session()
+        execution_result = SqlExecutionClient.execute_cortex_function(
+            session=self._get_session(), function_name="SUMMARIZE", args=[text], operation_name="summarize text"
+        )
 
-        try:
-            sql = f"""
-            SELECT SNOWFLAKE.CORTEX.SUMMARIZE(
-                '{text.replace("'", "''")}'
-            ) as summary
-            """
+        if not execution_result["success"]:
+            return execution_result["error"]
 
-            result = session.sql(sql).collect()
-
-            if result:
-                summary = result[0]["SUMMARY"]
-                return json.dumps(
-                    {
-                        "original_text": (text[:100] + "..." if len(text) > 100 else text),
-                        "summary": summary,
-                        "original_length": len(text),
-                        "summary_length": len(summary) if summary else 0,
-                    }
-                )
-            else:
-                return json.dumps({"error": "No summary generated"})
-
-        except Exception as e:
-            return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexSummarizerTool", "summarize text")
+        result = execution_result["result"]
+        if result:
+            summary = result[0]["RESULT"]
+            return json.dumps(
+                {
+                    "original_text": (text[:100] + "..." if len(text) > 100 else text),
+                    "summary": summary,
+                    "original_length": len(text),
+                    "summary_length": len(summary) if summary else 0,
+                }
+            )
+        else:
+            return json.dumps({"error": "No summary generated"})
 
     async def _arun(self, text: str, *, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
-        """Async summarize text by delegating to sync method with asyncio.to_thread."""
-        return await asyncio.to_thread(self._run, text, run_manager=run_manager)
+        """Async summarize text using native async SqlExecutionClient."""
+        execution_result = await SqlExecutionClient.execute_cortex_function_async(
+            session=self._get_session(), function_name="SUMMARIZE", args=[text], operation_name="summarize text"
+        )
+
+        if not execution_result["success"]:
+            return execution_result["error"]
+
+        result = execution_result["result"]
+        if result:
+            summary = result[0]["RESULT"]
+            return json.dumps(
+                {
+                    "original_text": (text[:100] + "..." if len(text) > 100 else text),
+                    "summary": summary,
+                    "original_length": len(text),
+                    "summary_length": len(summary) if summary else 0,
+                }
+            )
+        else:
+            return json.dumps({"error": "No summary generated"})
 
 
 class CortexTranslatorTool(BaseTool, SnowflakeConnectionMixin):
@@ -135,15 +184,21 @@ class CortexTranslatorTool(BaseTool, SnowflakeConnectionMixin):
 
     name: str = "cortex_translate"
     description: str = "Translate text using Snowflake Cortex TRANSLATE function"
-    args_schema: Type[BaseModel] = CortexTranslatorInput
+    args_schema: Union[Type[BaseModel], Dict[str, Any], None] = CortexTranslatorInput
 
     def __init__(self, **kwargs):
         """Initialize the translator tool with proper session attribute."""
-        # Call the parent initializer
+        # Extract session from kwargs if provided
+        session = kwargs.pop("session", None)
+
+        # Call the parent initializer with remaining kwargs
         super().__init__(**kwargs)
-        # Ensure _session attribute is initialized (from SnowflakeConnectionMixin)
-        if not hasattr(self, "_session"):
-            self._session = None
+
+        # Initialize session attribute (from SnowflakeConnectionMixin) using object.__setattr__ to bypass Pydantic
+        if session is not None:
+            object.__setattr__(self, "_session", session)
+        elif not hasattr(self, "_session"):
+            object.__setattr__(self, "_session", None)
 
     def _run(
         self,
@@ -154,44 +209,39 @@ class CortexTranslatorTool(BaseTool, SnowflakeConnectionMixin):
         run_manager: Optional[CallbackManagerForToolRun] = None,
     ) -> str:
         """Translate the given text to target language."""
-        session = self._get_session()
+        # Handle both string and dict inputs
+        if isinstance(text, dict):
+            text_content = text.get("text", str(text))
+        else:
+            text_content = str(text)
 
-        try:
-            # Handle both string and dict inputs
-            if isinstance(text, dict):
-                text_content = text.get("text", str(text))
-            else:
-                text_content = str(text)
+        # CORTEX.TRANSLATE expects (text, source_language, target_language)
+        # If source_language is not provided, we default to 'en' (English)
+        # Note: 'auto' is not supported by Snowflake CORTEX.TRANSLATE
+        source_lang = source_language or "en"
 
-            # CORTEX.TRANSLATE expects (text, source_language, target_language)
-            # If source_language is not provided, we default to 'en' (English)
-            # Note: 'auto' is not supported by Snowflake CORTEX.TRANSLATE
-            source_lang = source_language or "en"
-            escaped_text = text_content.replace("'", "''")
-            sql = f"""
-            SELECT SNOWFLAKE.CORTEX.TRANSLATE(
-                '{escaped_text}',
-                '{source_lang}',
-                '{target_language}'
-            ) as translated_text
-            """
+        execution_result = SqlExecutionClient.execute_cortex_function(
+            session=self._get_session(),
+            function_name="TRANSLATE",
+            args=[text_content, source_lang, target_language],
+            operation_name="translate text",
+        )
 
-            result = session.sql(sql).collect()
+        if not execution_result["success"]:
+            return execution_result["error"]
 
-            if result:
-                translated_text = result[0]["TRANSLATED_TEXT"]
-                return json.dumps(
-                    {
-                        "original_text": text_content,
-                        "translated_text": translated_text,
-                        "target_language": target_language,
-                    }
-                )
-            else:
-                return json.dumps({"error": "No translation generated"})
-
-        except Exception as e:
-            return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexTranslatorTool", "translate text")
+        result = execution_result["result"]
+        if result:
+            translated_text = result[0]["RESULT"]
+            return json.dumps(
+                {
+                    "original_text": text_content,
+                    "translated_text": translated_text,
+                    "target_language": target_language,
+                }
+            )
+        else:
+            return json.dumps({"error": "No translation generated"})
 
     async def _arun(
         self,
@@ -201,8 +251,40 @@ class CortexTranslatorTool(BaseTool, SnowflakeConnectionMixin):
         *,
         run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
     ) -> str:
-        """Async translate text by delegating to sync method with asyncio.to_thread."""
-        return await asyncio.to_thread(self._run, text, target_language, source_language, run_manager=run_manager)
+        """Async translate text using native async SqlExecutionClient."""
+        # Handle both string and dict inputs
+        if isinstance(text, dict):
+            text_content = text.get("text", str(text))
+        else:
+            text_content = str(text)
+
+        # CORTEX.TRANSLATE expects (text, source_language, target_language)
+        # If source_language is not provided, we default to 'en' (English)
+        # Note: 'auto' is not supported by Snowflake CORTEX.TRANSLATE
+        source_lang = source_language or "en"
+
+        execution_result = await SqlExecutionClient.execute_cortex_function_async(
+            session=self._get_session(),
+            function_name="TRANSLATE",
+            args=[text_content, source_lang, target_language],
+            operation_name="translate text",
+        )
+
+        if not execution_result["success"]:
+            return execution_result["error"]
+
+        result = execution_result["result"]
+        if result:
+            translated_text = result[0]["RESULT"]
+            return json.dumps(
+                {
+                    "original_text": text_content,
+                    "translated_text": translated_text,
+                    "target_language": target_language,
+                }
+            )
+        else:
+            return json.dumps({"error": "No translation generated"})
 
 
 class CortexCompleteTool(BaseTool, SnowflakeConnectionMixin):
@@ -210,15 +292,21 @@ class CortexCompleteTool(BaseTool, SnowflakeConnectionMixin):
 
     name: str = "cortex_complete"
     description: str = "Generate text completions using Snowflake Cortex COMPLETE function"
-    args_schema: Type[BaseModel] = CortexCompleteInput
+    args_schema: Union[Type[BaseModel], Dict[str, Any], None] = CortexCompleteInput
 
     def __init__(self, **kwargs):
         """Initialize the complete tool with proper session attribute."""
-        # Call the parent initializer
+        # Extract session from kwargs if provided
+        session = kwargs.pop("session", None)
+
+        # Call the parent initializer with remaining kwargs
         super().__init__(**kwargs)
-        # Ensure _session attribute is initialized (from SnowflakeConnectionMixin)
-        if not hasattr(self, "_session"):
-            self._session = None
+
+        # Initialize session attribute (from SnowflakeConnectionMixin) using object.__setattr__ to bypass Pydantic
+        if session is not None:
+            object.__setattr__(self, "_session", session)
+        elif not hasattr(self, "_session"):
+            object.__setattr__(self, "_session", None)
 
     def _run(
         self,
@@ -228,26 +316,22 @@ class CortexCompleteTool(BaseTool, SnowflakeConnectionMixin):
         run_manager: Optional[CallbackManagerForToolRun] = None,
     ) -> str:
         """Generate text completion for the given prompt."""
-        session = self._get_session()
+        execution_result = SqlExecutionClient.execute_cortex_function(
+            session=self._get_session(),
+            function_name="COMPLETE",
+            args=[model, prompt],
+            operation_name="generate completion",
+        )
 
-        try:
-            sql = f"""
-            SELECT SNOWFLAKE.CORTEX.COMPLETE(
-                '{model}',
-                '{prompt.replace("'", "''")}'
-            ) as completion
-            """
+        if not execution_result["success"]:
+            return execution_result["error"]
 
-            result = session.sql(sql).collect()
-
-            if result:
-                completion = result[0]["COMPLETION"]
-                return json.dumps({"prompt": prompt, "completion": completion, "model": model})
-            else:
-                return json.dumps({"error": "No completion generated"})
-
-        except Exception as e:
-            return SnowflakeToolErrorHandler.handle_tool_error(e, "CortexCompleteTool", "generate completion")
+        result = execution_result["result"]
+        if result:
+            completion = result[0]["RESULT"]
+            return json.dumps({"prompt": prompt, "completion": completion, "model": model})
+        else:
+            return json.dumps({"error": "No completion generated"})
 
     async def _arun(
         self,
@@ -256,5 +340,20 @@ class CortexCompleteTool(BaseTool, SnowflakeConnectionMixin):
         *,
         run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
     ) -> str:
-        """Async generate completion by delegating to sync method with asyncio.to_thread."""
-        return await asyncio.to_thread(self._run, prompt, model, run_manager=run_manager)
+        """Async generate completion using native async SqlExecutionClient."""
+        execution_result = await SqlExecutionClient.execute_cortex_function_async(
+            session=self._get_session(),
+            function_name="COMPLETE",
+            args=[model, prompt],
+            operation_name="generate completion",
+        )
+
+        if not execution_result["success"]:
+            return execution_result["error"]
+
+        result = execution_result["result"]
+        if result:
+            completion = result[0]["RESULT"]
+            return json.dumps({"prompt": prompt, "completion": completion, "model": model})
+        else:
+            return json.dumps({"error": "No completion generated"})
