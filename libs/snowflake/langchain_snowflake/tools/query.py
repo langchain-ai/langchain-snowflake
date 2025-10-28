@@ -1,9 +1,8 @@
 """SQL query execution tool for Snowflake."""
 
-import asyncio
 import json
 import logging
-from typing import Optional, Type
+from typing import Any, Dict, Optional, Type, Union
 
 from langchain_core.callbacks import (
     AsyncCallbackManagerForToolRun,
@@ -12,7 +11,7 @@ from langchain_core.callbacks import (
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 
-from .._connection import SnowflakeConnectionMixin
+from .._connection import SnowflakeConnectionMixin, SqlExecutionClient
 from .._error_handling import SnowflakeToolErrorHandler
 from ._base import SnowflakeQueryInput
 
@@ -55,17 +54,23 @@ class SnowflakeQueryTool(BaseTool, SnowflakeConnectionMixin):
 
     name: str = "snowflake_query"
     description: str = "Execute SQL queries on Snowflake database and return results"
-    args_schema: Type[BaseModel] = SnowflakeQueryInput
+    args_schema: Union[Type[BaseModel], Dict[str, Any], None] = SnowflakeQueryInput
 
     max_rows: int = Field(default=100)
 
     def __init__(self, **kwargs):
         """Initialize the query tool with proper session attribute."""
-        # Call the parent initializer
+        # Extract session from kwargs if provided
+        session = kwargs.pop("session", None)
+
+        # Call the parent initializer with remaining kwargs
         super().__init__(**kwargs)
-        # Ensure _session attribute is initialized (from SnowflakeConnectionMixin)
-        if not hasattr(self, "_session"):
-            self._session = None
+
+        # Initialize session attribute (from SnowflakeConnectionMixin) using object.__setattr__ to bypass Pydantic
+        if session is not None:
+            object.__setattr__(self, "_session", session)
+        elif not hasattr(self, "_session"):
+            object.__setattr__(self, "_session", None)
 
     def _run(self, query: str, *, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
         """Execute SQL query on Snowflake."""
@@ -109,5 +114,31 @@ class SnowflakeQueryTool(BaseTool, SnowflakeConnectionMixin):
         *,
         run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
     ) -> str:
-        """Async execute SQL query by delegating to sync method with asyncio.to_thread."""
-        return await asyncio.to_thread(self._run, query, run_manager=run_manager)
+        """Async execute SQL query using native async SqlExecutionClient."""
+        execution_result = await SqlExecutionClient.execute_async(
+            session=self._get_session(), sql=query, operation_name="execute SQL query"
+        )
+
+        if not execution_result["success"]:
+            return execution_result["error"]
+
+        result = execution_result["result"]
+        if not result:
+            return "Query executed successfully but returned no results."
+
+        # Format results as JSON
+        formatted_results = []
+        for row in result:
+            row_dict = {}
+            for field_name in row.as_dict():
+                row_dict[field_name] = str(row[field_name])
+            formatted_results.append(row_dict)
+
+        return json.dumps(
+            {
+                "results": formatted_results,
+                "row_count": len(formatted_results),
+                "query": query,
+            },
+            indent=2,
+        )

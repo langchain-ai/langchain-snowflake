@@ -1,11 +1,9 @@
 """Streaming functionality for Snowflake chat models."""
 
 import asyncio
-import json
 import logging
-from typing import Any, AsyncIterator, Dict, Iterator, List, Optional
+from typing import Any, AsyncIterator, Iterator, List, Optional
 
-import aiohttp
 from langchain_core.callbacks import (
     AsyncCallbackManagerForLLMRun,
     CallbackManagerForLLMRun,
@@ -13,6 +11,7 @@ from langchain_core.callbacks import (
 from langchain_core.messages import AIMessageChunk, BaseMessage
 from langchain_core.outputs import ChatGenerationChunk
 
+from .._connection.rest_client import RestApiClient, RestApiRequestBuilder
 from .._error_handling import SnowflakeErrorHandler
 
 logger = logging.getLogger(__name__)
@@ -138,93 +137,58 @@ class SnowflakeStreaming:
             payload = self._build_rest_api_payload(messages)
             payload["stream"] = True  # Enable native streaming
 
-            # Add generation parameters using shared utility
-            from .utils import SnowflakePayloadBuilder
-
-            payload = SnowflakePayloadBuilder.add_generation_params(
-                payload, self.temperature, self.max_tokens, self.top_p
+            # Add generation parameters directly
+            payload.update(
+                {
+                    "temperature": getattr(self, "temperature", 0.7),
+                    "max_tokens": getattr(self, "max_tokens", 4096),
+                    "top_p": getattr(self, "top_p", 1.0),
+                }
             )
 
-            # Make streaming request using shared utilities
-            from .._connection import SnowflakeAuthUtils
-
+            # Get session for centralized REST API client
             session = self._get_session()
-            response = SnowflakeAuthUtils.make_rest_api_request(
+
+            # Use centralized REST API client for streaming
+            request_config = RestApiRequestBuilder.cortex_complete_request(
                 session=session,
+                method="POST",
                 payload=payload,
-                account=getattr(self, "account", None),
-                user=getattr(self, "user", None),
-                token=getattr(self, "token", None),
-                private_key_path=getattr(self, "private_key_path", None),
-                private_key_passphrase=getattr(self, "private_key_passphrase", None),
-                request_timeout=getattr(self, "request_timeout", 30),
-                verify_ssl=getattr(self, "verify_ssl", True),
-                stream=True,  # Enable streaming response
+                request_timeout=self.request_timeout,
+                verify_ssl=self.verify_ssl,
             )
-            response.raise_for_status()
 
-            # Parse Server-Sent Events stream
-            content_buffer: List[str] = []
-            tool_calls: List[Dict[str, Any]] = []
-            tool_input_buffers: Dict[str, str] = {}
-            usage_data: Dict[str, Any] = {}
+            # Use centralized streaming
+            for chunk_json in RestApiClient.make_sync_streaming_request(request_config, "streaming Cortex Complete"):
+                if chunk_json:
+                    # Parse JSON chunk and extract content
+                    try:
+                        import json
 
-            for line in response.iter_lines():
-                if line:
-                    line_str = line.decode("utf-8")
-                    if line_str.startswith("data: "):
-                        try:
-                            data = json.loads(line_str[6:])
+                        chunk_data = json.loads(chunk_json)
+                        # Extract content from Cortex Complete format
+                        if isinstance(chunk_data, dict):
+                            chunk_content = chunk_data.get("content", "")
+                        else:
+                            chunk_content = str(chunk_data)
+                    except (json.JSONDecodeError, TypeError):
+                        # Fallback: treat as plain text
+                        chunk_content = chunk_json
 
-                            # Parse the streaming chunk
-                            chunk_parts: List[str] = []
-                            self._parse_streaming_chunk(
-                                data,
-                                chunk_parts,
-                                tool_calls,
-                                usage_data,
-                                tool_input_buffers,
-                            )
-
-                            # Yield chunk if there's content
-                            if chunk_parts:
-                                chunk_content = "".join(chunk_parts)
-                                content_buffer.append(chunk_content)
-
-                                # Create usage metadata for first chunk only using shared factory
-                                usage_metadata = None
-                                if len(content_buffer) == 1 and usage_data:
-                                    from .utils import SnowflakeMetadataFactory
-
-                                    usage_metadata = SnowflakeMetadataFactory.create_usage_metadata(usage_data)
-
-                                chunk = ChatGenerationChunk(
-                                    message=AIMessageChunk(
-                                        content=chunk_content,
-                                        tool_calls=tool_calls if tool_calls else None,
-                                        usage_metadata=usage_metadata,
-                                        response_metadata=(
-                                            {"model_name": self.model} if len(content_buffer) == 1 else {}
-                                        ),
-                                    )
-                                )
-
-                                yield chunk
-
-                                if run_manager:
-                                    run_manager.on_llm_new_token(chunk_content)
-
-                        except json.JSONDecodeError:
-                            continue  # Skip malformed JSON
+                    if chunk_content:
+                        chunk = ChatGenerationChunk(
+                            message=AIMessageChunk(content=chunk_content),
+                            generation_info={"stream": True},
+                        )
+                        if run_manager:
+                            run_manager.on_llm_new_token(chunk_content)
+                        yield chunk
 
         except Exception as e:
-            # Use centralized error handling for REST API streaming errors
-            SnowflakeErrorHandler.log_error("REST API streaming", e)
-            # Fallback to regular generation
-            result = self._generate_via_rest_api(messages)
-            if result.generations:
-                content = result.generations[0].message.content
-                yield ChatGenerationChunk(message=AIMessageChunk(content=content))
+            # Use centralized error handling
+            error_content = f"Streaming error: {str(e)}"
+            error_chunk = ChatGenerationChunk(message=AIMessageChunk(content=error_content))
+            yield error_chunk
 
     async def _astream_via_rest_api(
         self,
@@ -238,81 +202,59 @@ class SnowflakeStreaming:
             payload = self._build_rest_api_payload(messages)
             payload["stream"] = True  # Enable native streaming
 
-            # Add generation parameters using shared utility
-            from .utils import SnowflakePayloadBuilder
-
-            payload = SnowflakePayloadBuilder.add_generation_params(
-                payload, self.temperature, self.max_tokens, self.top_p
+            # Add generation parameters directly
+            payload.update(
+                {
+                    "temperature": getattr(self, "temperature", 0.7),
+                    "max_tokens": getattr(self, "max_tokens", 4096),
+                    "top_p": getattr(self, "top_p", 1.0),
+                }
             )
 
-            # Get session and build URL/headers manually for streaming
+            # Get session for centralized REST API client
             session = self._get_session()
-            from .._connection import SnowflakeAuthUtils
 
-            url = SnowflakeAuthUtils.build_rest_api_url(session)
-            headers = SnowflakeAuthUtils.get_rest_api_headers(
+            # Use centralized REST API client for streaming
+            from .._connection.rest_client import RestApiClient, RestApiRequestBuilder
+
+            request_config = RestApiRequestBuilder.cortex_complete_request(
                 session=session,
-                account=getattr(self, "account", None),
-                user=getattr(self, "user", None),
+                method="POST",
+                payload=payload,
+                request_timeout=self.request_timeout,
+                verify_ssl=self.verify_ssl,
             )
 
-            # Get timeout and SSL config
-            request_timeout = getattr(self, "request_timeout", 30)
-            verify_ssl = getattr(self, "verify_ssl", True)
+            # Use centralized async streaming
+            async for chunk_json in RestApiClient.make_async_streaming_request(
+                request_config, "async streaming Cortex Complete"
+            ):
+                if chunk_json:
+                    # Parse JSON chunk and extract content
+                    try:
+                        import json
 
-            # Use aiohttp for true async streaming
-            async with aiohttp.ClientSession() as client:
-                async with client.post(
-                    url,
-                    json=payload,
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=request_timeout),
-                    ssl=verify_ssl,
-                ) as response:
-                    response.raise_for_status()
+                        chunk_data = json.loads(chunk_json)
+                        # Extract content from Cortex Complete format
+                        if isinstance(chunk_data, dict):
+                            chunk_content = chunk_data.get("content", "")
+                        else:
+                            chunk_content = str(chunk_data)
+                    except (json.JSONDecodeError, TypeError):
+                        # Fallback: treat as plain text
+                        chunk_content = chunk_json
 
-                    # Parse Server-Sent Events stream asynchronously
-                    content_buffer = []
-
-                    async for line_bytes in response.content:
-                        line = line_bytes.decode("utf-8").strip()
-
-                        if line.startswith("data: "):
-                            data_part = line[6:]  # Remove 'data: ' prefix
-
-                            if data_part == "[DONE]":
-                                break
-
-                            try:
-                                chunk_data = json.loads(data_part)
-
-                                # Process chunk using shared utility
-
-                                if "choices" in chunk_data and chunk_data["choices"]:
-                                    choice = chunk_data["choices"][0]
-
-                                    # Handle content chunks
-                                    delta = choice.get("delta", {})
-                                    if "content" in delta:
-                                        content = delta["content"]
-                                        content_buffer.append(content)
-
-                                        # Create chunk using shared factory
-                                        chunk = ChatGenerationChunk(message=AIMessageChunk(content=content))
-                                        yield chunk
-
-                                # Handle usage data if present
-                                if "usage" in chunk_data:
-                                    chunk_data["usage"]
-
-                            except json.JSONDecodeError:
-                                continue  # Skip malformed JSON
+                    if chunk_content:
+                        chunk = ChatGenerationChunk(
+                            message=AIMessageChunk(content=chunk_content),
+                            generation_info={"stream": True},
+                        )
+                        if run_manager:
+                            await run_manager.on_llm_new_token(chunk_content)
+                        yield chunk
 
         except Exception as e:
-            # Use centralized error handling for async REST API streaming errors
-            SnowflakeErrorHandler.log_error("async REST API streaming", e)
-            # Fallback to async regular generation
-            result = await self._generate_via_rest_api_async(messages)
-            if result.generations:
-                content = result.generations[0].message.content
-                yield ChatGenerationChunk(message=AIMessageChunk(content=content))
+            # Use centralized error handling
+            error_content = f"Async streaming error: {str(e)}"
+            error_chunk = ChatGenerationChunk(message=AIMessageChunk(content=error_content))
+            yield error_chunk

@@ -14,8 +14,8 @@ EXPECTED_ALL = [
     "SnowflakeCortexAnalyst",
     # MCP Integration
     "MCPToolWrapper",
-    "create_mcp_tool_wrapper",
-    "create_snowflake_compatible_tools",
+    "create_langchain_tool_from_mcp",
+    "filter_compatible_mcp_tools",
     "bind_mcp_tools",
     # Document Formatters
     "format_cortex_search_documents",
@@ -27,6 +27,14 @@ EXPECTED_ALL = [
     "get_default_session",
     # Version
     "__version__",
+    # Agent Management (newly added)
+    "SnowflakeCortexAgent",
+    "AgentCreateInput",
+    "AgentUpdateInput",
+    "EnhancedAgentInput",
+    "ThreadUpdateInput",
+    "FeedbackInput",
+    "FeedbackOutput",
 ]
 
 
@@ -72,15 +80,15 @@ def test_individual_imports() -> None:
     from langchain_snowflake import (
         MCPToolWrapper,
         bind_mcp_tools,
-        create_mcp_tool_wrapper,
-        create_snowflake_compatible_tools,
+        create_langchain_tool_from_mcp,
+        filter_compatible_mcp_tools,
     )
 
     assert all(
         [
             MCPToolWrapper is not None,
-            create_mcp_tool_wrapper is not None,
-            create_snowflake_compatible_tools is not None,
+            create_langchain_tool_from_mcp is not None,
+            filter_compatible_mcp_tools is not None,
             bind_mcp_tools is not None,
         ]
     )

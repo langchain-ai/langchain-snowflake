@@ -3,12 +3,7 @@
 import logging
 from typing import Any, Dict, Optional
 
-import aiohttp
-import requests
 from snowflake.snowpark import Session
-
-from .._connection import SnowflakeAuthUtils
-from .._error_handling import SnowflakeRestApiErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -74,70 +69,3 @@ class SnowflakeAuth:
 
         except Exception as e:
             raise ValueError(f"Failed to create Snowflake session: {e}")
-
-    def _make_rest_api_request(self, payload: Dict[str, Any]) -> requests.Response:
-        """Make the actual REST API request using shared utilities.
-
-        This method now uses the centralized SnowflakeAuthUtils.make_rest_api_request
-        which handles authentication, URL building, and request execution internally.
-        """
-        session: Session = self._get_session()
-
-        # Use shared utility for making REST API requests (handles auth internally)
-        return SnowflakeAuthUtils.make_rest_api_request(
-            session=session,
-            payload=payload,
-            account=getattr(self, "account", None),
-            user=getattr(self, "user", None),
-            token=getattr(self, "token", None),
-            private_key_path=getattr(self, "private_key_path", None),
-            private_key_passphrase=getattr(self, "private_key_passphrase", None),
-            request_timeout=getattr(self, "request_timeout", 30),
-            verify_ssl=getattr(self, "verify_ssl", True),
-            stream=True,  # Enable streaming for tool calling
-        )
-
-    async def _make_rest_api_request_async(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Make async REST API request using aiohttp for true async patterns.
-
-        This method provides native async HTTP for chat model REST API calls,
-        avoiding the blocking behavior of synchronous requests.
-
-        Returns:
-            The JSON response data as a dictionary
-        """
-        session: Session = self._get_session()
-
-        try:
-            # Build URL using shared utilities
-            url = SnowflakeAuthUtils.build_rest_api_url(session)
-
-            # Get authentication headers using shared utilities
-            headers = SnowflakeAuthUtils.get_rest_api_headers(
-                session=session,
-                account=getattr(self, "account", None),
-                user=getattr(self, "user", None),
-            )
-
-            # Get timeout configuration
-            request_timeout = getattr(self, "request_timeout", 30)
-            verify_ssl = getattr(self, "verify_ssl", True)
-
-            # Use aiohttp for true async HTTP
-            async with aiohttp.ClientSession() as client:
-                async with client.post(
-                    url,
-                    json=payload,
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=request_timeout),
-                    ssl=verify_ssl,
-                ) as response:
-                    response.raise_for_status()
-                    # Use safe JSON parsing with detailed error handling
-                    return await SnowflakeRestApiErrorHandler.safe_parse_json_response_async(
-                        response, "async REST API request", logger
-                    )
-
-        except Exception as e:
-            logger.error(f"Async REST API request failed: {e}")
-            raise
