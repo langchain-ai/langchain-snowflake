@@ -190,24 +190,33 @@ The goal is to provide the most helpful, accurate, and relevant information to t
 
             elif isinstance(message, ToolMessage):
                 # Tool results must be sent as content_list in a user message
-                api_messages.append(
-                    {
-                        "role": "user",
-                        "content_list": [
-                            {
-                                "type": "tool_results",
-                                "tool_results": {
-                                    "tool_use_id": message.tool_call_id,
-                                    "name": message.name if hasattr(message, "name") else "unknown",
-                                    "content": [{"type": "text", "text": str(message.content)}],
-                                },
-                            }
-                        ],
-                    }
-                )
-
+                # Tool results must be sent as content_list in a user message
+                tool_result = {
+                    "type": "tool_results",
+                    "tool_results": {
+                        "tool_use_id": message.tool_call_id,
+                        "name": message.name if hasattr(message, "name") else "unknown",
+                        "content": [{"type": "text", "text": str(message.content)}],
+                    },
+                }
+                # If the previous message is a user message with content_list, append to it
+                if (
+                    api_messages
+                    and api_messages[-1].get("role") == "user"
+                    and "content_list" in api_messages[-1]
+                ):
+                    api_messages[-1]["content_list"].append(tool_result)
+                else:
+                    api_messages.append(
+                        {
+                            "role": "user",
+                            "content_list": [tool_result],
+                        }
+                    )
+                
             elif isinstance(message, SystemMessage):
                 api_messages.append({"role": "system", "content": message.content})
+                
             else:
                 # Fallback for unknown message types
                 content = str(message.content) if hasattr(message, "content") else str(message)
