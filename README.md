@@ -47,8 +47,8 @@ export LANGCHAIN_PROJECT=snowflake-cortex
 - [Snowflake Workflows](https://github.com/langchain-ai/langchain-snowflake/blob/main/libs/snowflake/docs/snowflake_workflows.ipynb)
 - [Advanced Patterns](https://github.com/langchain-ai/langchain-snowflake/blob/main/libs/snowflake/docs/advanced_patterns.ipynb)
 - [MCP Integration](https://github.com/langchain-ai/langchain-snowflake/blob/main/libs/snowflake/docs/mcp_integration.ipynb)
-- [Quickstart](https://quickstarts.snowflake.com/guide/build-evaluate-rag-langchain-snowflake/index.html?index=..%2F..index#0)
-- [Multi-Agent Demo]() - coming soon
+- [RAG Quickstart](https://quickstarts.snowflake.com/guide/build-evaluate-rag-langchain-snowflake/index.html?index=..%2F..index#0)
+- [Multi-Agent Quickstart]() - coming soon
 
 ## Contributing
 
