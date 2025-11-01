@@ -5,7 +5,7 @@ This module provides a centralized client for all SQL execution operations.
 
 import asyncio
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from snowflake.snowpark import Session
 
@@ -22,37 +22,46 @@ class SqlExecutionClient:
     """
 
     @staticmethod
-    def execute_sync(session: Session, sql: str, operation_name: str = "SQL execution") -> Dict[str, Any]:
+    def execute_sync(
+        session: Session, sql: str, params: Optional[List[Any]] = None, operation_name: str = "SQL execution"
+    ) -> Dict[str, Any]:
         """Execute SQL synchronously with centralized error handling.
 
         Args:
             session: Active Snowflake session
             sql: SQL query to execute
+            params: Optional list of parameters for parameterized queries
             operation_name: Description for error logging
 
         Returns:
             Dictionary with execution results or error information
         """
         try:
-            result = session.sql(sql).collect()
+            if params:
+                result = session.sql(sql, params=params).collect()
+            else:
+                result = session.sql(sql).collect()
             return {"success": True, "result": result}
         except Exception as e:
             error_msg = SnowflakeToolErrorHandler.handle_tool_error(e, "SqlExecutionClient", operation_name)
             return {"success": False, "error": error_msg}
 
     @staticmethod
-    async def execute_async(session: Session, sql: str, operation_name: str = "async SQL execution") -> Dict[str, Any]:
+    async def execute_async(
+        session: Session, sql: str, params: Optional[List[Any]] = None, operation_name: str = "async SQL execution"
+    ) -> Dict[str, Any]:
         """Execute SQL asynchronously using asyncio.to_thread.
 
         Args:
             session: Active Snowflake session
             sql: SQL query to execute
+            params: Optional list of parameters for parameterized queries
             operation_name: Description for error logging
 
         Returns:
             Dictionary with execution results or error information
         """
-        return await asyncio.to_thread(SqlExecutionClient.execute_sync, session, sql, operation_name)
+        return await asyncio.to_thread(SqlExecutionClient.execute_sync, session, sql, params, operation_name)
 
     @staticmethod
     def _escape_sql_arg(arg: Any) -> str:
@@ -79,7 +88,7 @@ class SqlExecutionClient:
         escaped_args = [SqlExecutionClient._escape_sql_arg(arg) for arg in args]
         sql = f"SELECT SNOWFLAKE.CORTEX.{function_name}({', '.join(escaped_args)}) as result"
 
-        return SqlExecutionClient.execute_sync(session, sql, operation_name)
+        return SqlExecutionClient.execute_sync(session, sql, operation_name=operation_name)
 
     @staticmethod
     async def execute_cortex_function_async(
@@ -100,4 +109,4 @@ class SqlExecutionClient:
         escaped_args = [SqlExecutionClient._escape_sql_arg(arg) for arg in args]
         sql = f"SELECT SNOWFLAKE.CORTEX.{function_name}({', '.join(escaped_args)}) as result"
 
-        return await SqlExecutionClient.execute_async(session, sql, operation_name)
+        return await SqlExecutionClient.execute_async(session, sql, operation_name=operation_name)

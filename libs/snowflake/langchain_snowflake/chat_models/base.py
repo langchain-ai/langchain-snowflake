@@ -12,6 +12,7 @@ from pydantic import Field, SecretStr
 from snowflake.snowpark import Session
 
 from .._connection.rest_client import RestApiClient, RestApiRequestBuilder
+from .._connection.sql_client import SqlExecutionClient
 from .._error_handling import SnowflakeErrorHandler
 from .auth import SnowflakeAuth
 from .streaming import SnowflakeStreaming
@@ -213,6 +214,13 @@ class ChatSnowflake(
     ls_structured_output_format: Optional[str] = Field(default=None)
     """Structured output format for LangChain compatibility."""
 
+    # Tool execution control
+    disable_parallel_tool_use: bool = Field(default=False)
+    """Whether to disable parallel tool use (force sequential execution)."""
+
+    group_tool_messages: bool = Field(default=True)
+    """Whether to group consecutive ToolMessage objects into single user message."""
+
     @property
     def _ls_structured_output_format(self) -> Optional[str]:
         """Return the structured output format for LangChain compatibility."""
@@ -241,6 +249,8 @@ class ChatSnowflake(
         private_key_passphrase: Optional[str] = None,
         request_timeout: int = 300,
         verify_ssl: bool = True,
+        disable_parallel_tool_use: bool = False,
+        group_tool_messages: bool = True,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -260,6 +270,8 @@ class ChatSnowflake(
         self.private_key_passphrase = private_key_passphrase
         self.request_timeout = request_timeout
         self.verify_ssl = verify_ssl
+        self.disable_parallel_tool_use = disable_parallel_tool_use
+        self.group_tool_messages = group_tool_messages
 
         # Tool-related attributes for bind_tools compatibility
         self._bound_tools: List[Dict[str, Any]] = []
@@ -358,23 +370,53 @@ class ChatSnowflake(
 
                 # Use parameterized queries to avoid JSON escaping issues entirely
                 sql = """SELECT SNOWFLAKE.CORTEX.COMPLETE(?, PARSE_JSON(?), PARSE_JSON(?)) as response"""
-                result = session.sql(
-                    sql,
+                execution_result = SqlExecutionClient.execute_sync(
+                    session=session,
+                    sql=sql,
                     params=[self.model, json.dumps(prompt_data), json.dumps(options)],
-                ).collect()
+                    operation_name="call Cortex COMPLETE",
+                )
+
+                if not execution_result["success"]:
+                    SnowflakeErrorHandler.log_and_raise(
+                        ValueError(execution_result["error"]), "call Cortex COMPLETE via SQL"
+                    )
+                result = execution_result["result"]
             else:
                 # Use simple string format with proper escaping
                 if isinstance(formatted_prompt, str):
                     # Use parameterized query for simple format too
                     sql = "SELECT SNOWFLAKE.CORTEX.COMPLETE(?, ?) as response"
-                    result = session.sql(sql, params=[self.model, formatted_prompt]).collect()
+                    execution_result = SqlExecutionClient.execute_sync(
+                        session=session,
+                        sql=sql,
+                        params=[self.model, formatted_prompt],
+                        operation_name="call Cortex COMPLETE",
+                    )
+
+                    if not execution_result["success"]:
+                        SnowflakeErrorHandler.log_and_raise(
+                            ValueError(execution_result["error"]), "call Cortex COMPLETE via SQL"
+                        )
+                    result = execution_result["result"]
                 else:
                     # Convert to string for simple format
                     prompt_text = " ".join(
                         [msg.get("content", "") for msg in formatted_prompt if isinstance(msg, dict)]
                     )
                     sql = "SELECT SNOWFLAKE.CORTEX.COMPLETE(?, ?) as response"
-                    result = session.sql(sql, params=[self.model, prompt_text]).collect()
+                    execution_result = SqlExecutionClient.execute_sync(
+                        session=session,
+                        sql=sql,
+                        params=[self.model, prompt_text],
+                        operation_name="call Cortex COMPLETE",
+                    )
+
+                    if not execution_result["success"]:
+                        SnowflakeErrorHandler.log_and_raise(
+                            ValueError(execution_result["error"]), "call Cortex COMPLETE via SQL"
+                        )
+                    result = execution_result["result"]
 
             if not result:
                 try:

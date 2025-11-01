@@ -1,6 +1,7 @@
 """Streaming functionality for Snowflake chat models."""
 
 import asyncio
+import json
 import logging
 from typing import Any, AsyncIterator, Iterator, List, Optional
 
@@ -163,8 +164,6 @@ class SnowflakeStreaming:
                 if chunk_json:
                     # Parse JSON chunk and extract content
                     try:
-                        import json
-
                         chunk_data = json.loads(chunk_json)
                         # Extract content from Cortex Complete format
                         if isinstance(chunk_data, dict):
