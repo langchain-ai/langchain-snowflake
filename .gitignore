@@ -1,3 +1,6 @@
 # Environments
 .venv*
 .DS_Store
+
+# Cursor rules
+.cursorrules

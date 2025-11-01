@@ -264,7 +264,7 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
             return self._parse_rest_api_response(response_data)
 
         except Exception as e:
-            return SnowflakeErrorHandler.log_and_raise(
+            SnowflakeErrorHandler.log_and_raise(
                 error=e,
                 operation="Cortex Search REST API request",
                 logger_instance=logger,
@@ -295,14 +295,27 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
             return self._parse_rest_api_response(response_data)
 
         except Exception as e:
-            SnowflakeErrorHandler.log_and_raise(e, "async Cortex Search REST API request")
+            SnowflakeErrorHandler.log_and_raise(
+                error=e,
+                operation="async Cortex Search REST API request",
+                logger_instance=logger,
+            )
 
     def _parse_rest_api_response(self, data: Dict[str, Any]) -> List[Document]:
         """Parse REST API response into Document objects."""
         documents = []
 
         results = data.get("results", [])
+        if not isinstance(results, list):
+            logger.warning(f"Expected list in 'results', got {type(results).__name__}")
+            return []
+
         for result in results:
+            # Ensure result is a dict before accessing it
+            if not isinstance(result, dict):
+                logger.warning(f"Expected dict in results, got {type(result).__name__}")
+                continue
+
             # Extract content and metadata
             content = result.get("content", "")
             metadata = {k: v for k, v in result.items() if k != "content"}

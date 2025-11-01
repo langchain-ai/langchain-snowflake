@@ -5,13 +5,14 @@ import logging
 from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Union
 
 from langchain_core.language_models import LanguageModelInput
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolCall, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
 from .._error_handling import SnowflakeErrorHandler, SnowflakeRestApiErrorHandler
+from .utils import SnowflakeMetadataFactory
 
 logger = logging.getLogger(__name__)
 
@@ -145,9 +146,148 @@ and provide alternative information when possible.
 Remember: Use tools to enhance your responses, not replace thoughtful analysis. 
 The goal is to provide the most helpful, accurate, and relevant information to the user."""
 
+    def _group_consecutive_tool_messages(
+        self, messages: List[BaseMessage]
+    ) -> List[Union[BaseMessage, List[ToolMessage]]]:
+        """
+        Group consecutive ToolMessage objects together.
+
+        Args:
+            messages: List of messages to process
+
+        Returns:
+            List where consecutive ToolMessage objects are grouped into sublists,
+            other messages remain as individual items
+        """
+        if not getattr(self, "group_tool_messages", True):
+            return messages  # Maintain old behavior if disabled
+
+        result = []
+        current_tool_group = []
+
+        for message in messages:
+            if isinstance(message, ToolMessage):
+                current_tool_group.append(message)
+            else:
+                # If we have accumulated tool messages, add them as a group
+                if current_tool_group:
+                    result.append(current_tool_group)
+                    current_tool_group = []
+                result.append(message)
+
+        # Handle any remaining tool messages
+        if current_tool_group:
+            result.append(current_tool_group)
+
+        return result
+
+    def _process_tool_message_group(self, tool_messages: List[ToolMessage]) -> Dict[str, Any]:
+        """
+        Process a group of ToolMessage objects into a single user message.
+
+        Args:
+            tool_messages: List of consecutive ToolMessage objects
+
+        Returns:
+            Dictionary representing a user message with grouped tool results
+        """
+        tool_results = []
+
+        for tool_msg in tool_messages:
+            tool_results.append(
+                {
+                    "type": "tool_results",
+                    "tool_results": {
+                        "tool_use_id": tool_msg.tool_call_id,
+                        "name": getattr(tool_msg, "name", None) or "unknown",
+                        "content": [{"type": "text", "text": str(tool_msg.content)}],
+                    },
+                }
+            )
+
+        return {"role": "user", "content_list": tool_results}
+
+    def _process_single_message(self, message: BaseMessage) -> Dict[str, Any]:
+        """
+        Process a single message (non-ToolMessage) into API format.
+
+        Args:
+            message: Single message to process
+
+        Returns:
+            Dictionary representing the message in API format
+        """
+        if isinstance(message, HumanMessage):
+            return {"role": "user", "content": message.content}
+
+        elif isinstance(message, AIMessage):
+            if hasattr(message, "tool_calls") and message.tool_calls:
+                # Build content_list for Snowflake Complete API
+                content_list: List[Dict[str, Any]] = []
+
+                # Add text content if present
+                if message.content:
+                    content_list.append({"type": "text", "text": message.content})
+
+                # Add tool_use blocks
+                for tool_call in message.tool_calls:
+                    # Handle both dict and ToolCall object formats
+                    if isinstance(tool_call, dict):
+                        tool_call_id = tool_call.get("id", "") or ""
+                        tool_call_name = tool_call["name"]
+                        tool_call_args = tool_call["args"]
+                    else:
+                        # ToolCall object - access as attributes
+                        tool_call_id = getattr(tool_call, "id", None) or ""
+                        tool_call_name = getattr(tool_call, "name", None)
+                        tool_call_args = getattr(tool_call, "args", {})
+
+                    # Ensure we have a valid ID
+                    if not tool_call_id:
+                        tool_call_id = f"toolu_{id(tool_call)}"
+
+                    # Process input: keep dicts/objects as-is, convert other types appropriately
+                    if isinstance(tool_call_args, dict):
+                        tool_input = tool_call_args
+                    elif isinstance(tool_call_args, (str, list)):
+                        tool_input = tool_call_args
+                    else:
+                        # For other types, try to convert to dict or string
+                        tool_input = tool_call_args if isinstance(tool_call_args, (dict, list)) else str(tool_call_args)
+
+                    content_list.append(
+                        {
+                            "type": "tool_use",
+                            "tool_use": {
+                                "tool_use_id": str(tool_call_id),
+                                "name": tool_call_name,
+                                "input": tool_input,
+                            },
+                        }
+                    )
+
+                return {"role": "assistant", "content_list": content_list}
+            else:
+                return {"role": "assistant", "content": message.content or ""}
+
+        elif isinstance(message, SystemMessage):
+            return {"role": "system", "content": message.content}
+
+        else:
+            # Fallback for unknown message types
+            content = str(message.content) if hasattr(message, "content") else str(message)
+            return {"role": "user", "content": content}
+
     def _build_rest_api_payload(self, messages: List[BaseMessage]) -> Dict[str, Any]:
-        """Build REST API payload following official Snowflake format with content_list support."""
-        # Convert LangChain messages to REST API format
+        """
+        Build REST API payload.
+
+        Args:
+            messages: List of LangChain messages
+
+        Returns:
+            Dictionary representing the API payload
+        """
         api_messages: List[Dict[str, Any]] = []
 
         # Get bound tools for enhanced system prompt
@@ -160,66 +300,28 @@ The goal is to provide the most helpful, accurate, and relevant information to t
             enhanced_prompt = self._build_enhanced_system_prompt(bound_tools)
             api_messages.append({"role": "system", "content": enhanced_prompt})
 
-        for message in messages:
-            if isinstance(message, HumanMessage):
-                api_messages.append({"role": "user", "content": message.content})
+        # Group messages properly
+        grouped_messages = self._group_consecutive_tool_messages(messages)
 
-            elif isinstance(message, AIMessage):
-                # Check if this message has tool calls
-                if hasattr(message, "tool_calls") and message.tool_calls:
-                    # Build content_list for tool_use
-                    content_list = []
-                    for tool_call in message.tool_calls:
-                        content_list.append(
-                            {
-                                "type": "tool_use",
-                                "tool_use": {
-                                    "tool_use_id": tool_call.get("id", f"tooluse_{id(tool_call)}"),
-                                    "name": tool_call["name"],
-                                    "input": tool_call["args"],
-                                },
-                            }
-                        )
+        # Process each group or individual message
+        for item in grouped_messages:
+            if isinstance(item, list):  # Tool message group
+                user_message = self._process_tool_message_group(item)
+                api_messages.append(user_message)
+            else:  # Single message
+                api_message = self._process_single_message(item)
+                api_messages.append(api_message)
 
-                    api_messages.append(
-                        {"role": "assistant", "content": message.content or "", "content_list": content_list}
-                    )
-                else:
-                    # Regular assistant message
-                    api_messages.append({"role": "assistant", "content": message.content or ""})
-
-            elif isinstance(message, ToolMessage):
-                # Tool results must be sent as content_list in a user message
-                api_messages.append(
-                    {
-                        "role": "user",
-                        "content_list": [
-                            {
-                                "type": "tool_results",
-                                "tool_results": {
-                                    "tool_use_id": message.tool_call_id,
-                                    "name": message.name if hasattr(message, "name") else "unknown",
-                                    "content": [{"type": "text", "text": str(message.content)}],
-                                },
-                            }
-                        ],
-                    }
-                )
-
-            elif isinstance(message, SystemMessage):
-                api_messages.append({"role": "system", "content": message.content})
-            else:
-                # Fallback for unknown message types
-                content = str(message.content) if hasattr(message, "content") else str(message)
-                api_messages.append({"role": "user", "content": content})
-
-        # Build payload exactly as shown in official documentation
-        payload = {"model": self.model, "messages": api_messages}
+        # Build payload
+        payload = {
+            "model": self.model,
+            "messages": api_messages,
+            "disable_parallel_tool_use": self.disable_parallel_tool_use,
+        }
 
         # Add tools if bound
         if self._has_tools() and hasattr(self, "_bound_tools"):
             payload["tools"] = self._bound_tools
-            # DO NOT include tool_choice - Snowflake REST API doesn't support it
 
         return payload
 
@@ -301,15 +403,14 @@ The goal is to provide the most helpful, accurate, and relevant information to t
                         content_parts.append(response_or_data.text)
 
         except Exception as e:
-            # Use centralized error handling for response parsing errors
-            SnowflakeRestApiErrorHandler.log_error("parse REST API response", e)
+            # Use centralized REST API error handler for response parsing errors
+            SnowflakeRestApiErrorHandler.handle_rest_api_response_error(
+                error=e, operation="parse REST API response", logger_instance=logger
+            )
             content_parts.append(f"Error parsing response: {str(e)}")
 
         # Combine all content parts
         full_content = "".join(content_parts)
-
-        # Create response message using shared factories
-        from .utils import SnowflakeMetadataFactory
 
         # Calculate fallback token counts if not provided in usage_data
         input_tokens = usage_data.get("prompt_tokens", self._estimate_tokens(original_messages))
@@ -352,15 +453,14 @@ The goal is to provide the most helpful, accurate, and relevant information to t
                 tool_calls.extend(extracted_tool_calls)
                 usage_data.update(extracted_usage)
         except Exception as e:
-            # Use centralized error handling for async response parsing errors
-            SnowflakeRestApiErrorHandler.log_error("parse async REST API response", e)
+            # Use centralized REST API error handler for async response parsing errors
+            SnowflakeRestApiErrorHandler.handle_rest_api_response_error(
+                error=e, operation="parse async REST API response", logger_instance=logger
+            )
             content_parts.append(f"Error parsing response: {str(e)}")
 
         # Combine all content parts
         full_content = "".join(content_parts)
-
-        # Create response message using shared factories
-        from .utils import SnowflakeMetadataFactory
 
         # Calculate fallback token counts if not provided in usage_data
         input_tokens = usage_data.get("prompt_tokens", self._estimate_tokens(original_messages))
@@ -407,9 +507,7 @@ The goal is to provide the most helpful, accurate, and relevant information to t
                 # Check if this is the start of a new tool call
                 if "tool_use_id" in delta and "name" in delta:
                     # Create new tool call using LangChain format
-                    from langchain_core.messages.tool import tool_call
-
-                    tool_call_obj = tool_call(
+                    tool_call_obj = ToolCall(
                         name=delta["name"],
                         args={},  # Will be updated when input is complete
                         id=delta["tool_use_id"],
@@ -428,13 +526,9 @@ The goal is to provide the most helpful, accurate, and relevant information to t
 
                     # Try to parse the accumulated input as JSON
                     try:
-                        import json
-
                         parsed_args = json.loads(tool_input_buffers[recent_tool_id])
                         # Update the tool call with complete args
-                        from langchain_core.messages.tool import tool_call
-
-                        updated_tool_call = tool_call(
+                        updated_tool_call = ToolCall(
                             name=tool_calls[-1]["name"],
                             args=parsed_args,
                             id=tool_calls[-1]["id"],
