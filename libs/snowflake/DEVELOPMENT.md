@@ -6,7 +6,7 @@ This guide covers setting up the development environment, running tests, and con
 
 ## Prerequisites
 
-- Python 3.9+
+- Python 3.10+
 - Snowflake account with Cortex features enabled
 - Git
 - Valid Snowflake credentials

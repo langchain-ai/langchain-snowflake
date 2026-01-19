@@ -21,7 +21,7 @@ Example:
 import logging
 from typing import Any, List, Optional
 
-from langchain.tools import Tool
+from langchain_core.tools import Tool
 
 from ._error_handling import SnowflakeErrorHandler, SnowflakeToolErrorHandler
 
