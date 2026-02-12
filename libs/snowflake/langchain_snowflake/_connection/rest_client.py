@@ -83,6 +83,10 @@ class RestApiClient:
         if query_params:
             request_config["params"] = query_params
 
+        # Add proxies if provided
+        if "proxies" in kwargs:
+            request_config["proxies"] = kwargs["proxies"]
+
         return request_config
 
     @staticmethod
@@ -102,17 +106,22 @@ class RestApiClient:
         method = request_config.pop("method")
         timeout = request_config.pop("timeout")
         verify = request_config.pop("verify")
+        proxies = request_config.pop("proxies", None)
 
         try:
             # Log request details for debugging
             logger.debug(f"Making {method} request to: {request_config.get('url', 'Unknown URL')}")
+            if proxies:
+                logger.debug(f"Using proxies: {proxies}")
             if "json" in request_config:
                 logger.debug(f"Request payload keys: {list(request_config['json'].keys())}")
                 if "stream" in request_config["json"]:
                     logger.debug(f"Stream parameter: {request_config['json']['stream']}")
 
             # Use requests for sync HTTP
-            response = getattr(requests, method.lower())(**request_config, timeout=timeout, verify=verify)
+            response = getattr(requests, method.lower())(
+                **request_config, timeout=timeout, verify=verify, proxies=proxies
+            )
             response.raise_for_status()
 
             # Log response details for debugging
@@ -155,11 +164,22 @@ class RestApiClient:
         method = request_config.pop("method")
         timeout = aiohttp.ClientTimeout(total=request_config.pop("timeout"))
         ssl = request_config.pop("verify")
+        proxies = request_config.pop("proxies", None)
+
+        # Extract proxy URL for aiohttp (uses single proxy string, not dict)
+        proxy = None
+        if proxies:
+            # aiohttp uses the proxy for the request's scheme
+            proxy = proxies.get("https") or proxies.get("http")
+            if proxy:
+                logger.debug(f"Using proxy for async request: {proxy}")
 
         try:
             # Use aiohttp for async HTTP
             async with aiohttp.ClientSession() as client:
-                async with getattr(client, method.lower())(**request_config, timeout=timeout, ssl=ssl) as response:
+                async with getattr(client, method.lower())(
+                    **request_config, timeout=timeout, ssl=ssl, proxy=proxy
+                ) as response:
                     response.raise_for_status()
 
                     # Check for Snowflake request ID in headers (used as run_id for feedback)
@@ -194,11 +214,12 @@ class RestApiClient:
         method = request_config.pop("method")
         timeout = request_config.pop("timeout")
         verify = request_config.pop("verify")
+        proxies = request_config.pop("proxies", None)
 
         try:
             # Use requests for sync streaming HTTP
             with getattr(requests, method.lower())(
-                **request_config, timeout=timeout, verify=verify, stream=True
+                **request_config, timeout=timeout, verify=verify, stream=True, proxies=proxies
             ) as response:
                 response.raise_for_status()
 
@@ -239,11 +260,19 @@ class RestApiClient:
         method = request_config.pop("method")
         timeout = aiohttp.ClientTimeout(total=request_config.pop("timeout"))
         ssl = request_config.pop("verify")
+        proxies = request_config.pop("proxies", None)
+
+        # Extract proxy URL for aiohttp
+        proxy = None
+        if proxies:
+            proxy = proxies.get("https") or proxies.get("http")
 
         try:
             # Use aiohttp for async streaming HTTP
             async with aiohttp.ClientSession() as client:
-                async with getattr(client, method.lower())(**request_config, timeout=timeout, ssl=ssl) as response:
+                async with getattr(client, method.lower())(
+                    **request_config, timeout=timeout, ssl=ssl, proxy=proxy
+                ) as response:
                     response.raise_for_status()
 
                     # Process streaming response

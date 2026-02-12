@@ -147,6 +147,18 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
         session = self._get_session()
         payload = self._build_rest_api_payload(query, semantic_model)
 
+        # Get proxy configuration from session if available
+        proxies = None
+        if hasattr(session, "_conn") and hasattr(session._conn, "_conn"):
+            conn = session._conn._conn
+            if hasattr(conn, "proxy_host") and hasattr(conn, "proxy_port"):
+                proxy_host = conn.proxy_host
+                proxy_port = conn.proxy_port
+                if proxy_host and proxy_port:
+                    proxy_url = f"http://{proxy_host}:{proxy_port}"
+                    proxies = {"http": proxy_url, "https": proxy_url}
+                    logger.debug(f"Using proxy from session: {proxy_url}")
+
         request_config = RestApiRequestBuilder.cortex_analyst_request(
             session=session,
             method="POST",
@@ -154,6 +166,7 @@ class SnowflakeCortexAnalyst(BaseTool, SnowflakeConnectionMixin):
             request_timeout=self.request_timeout,
             verify_ssl=self.verify_ssl,
             stream=self.enable_streaming,
+            proxies=proxies,
         )
 
         operation_name = "Cortex Analyst REST API request"
