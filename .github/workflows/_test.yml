@@ -17,6 +17,8 @@ jobs:
       run:
         working-directory: ${{ inputs.working-directory }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         python-version:
