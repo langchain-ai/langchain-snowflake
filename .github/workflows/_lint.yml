@@ -19,6 +19,8 @@ jobs:
   build:
     name: "make lint #${{ matrix.python-version }}"
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         # Only lint on the min and max supported Python versions.
