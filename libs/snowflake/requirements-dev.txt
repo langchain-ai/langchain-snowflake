@@ -102,7 +102,7 @@ urllib3==2.5.0 ; python_version >= "3.10" and python_version < "3.12" and platfo
 uv==0.8.22 ; python_version >= "3.9" and python_version < "3.12"
 vcrpy==7.0.0 ; python_version >= "3.9" and python_version < "3.12"
 watchdog==6.0.0 ; python_version >= "3.9" and python_version < "3.12"
-wheel==0.45.1 ; python_version >= "3.9" and python_version < "3.12"
+wheel==0.46.2 ; python_version >= "3.9" and python_version < "3.12"
 wrapt==1.17.3 ; python_version >= "3.9" and python_version < "3.12"
 xxhash==3.5.0 ; python_version >= "3.9" and python_version < "3.12"
 yarl==1.20.1 ; python_version >= "3.9" and python_version < "3.12"
