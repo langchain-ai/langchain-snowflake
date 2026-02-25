@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
-from pydantic import Field, SecretStr
+from pydantic import ConfigDict, Field, SecretStr
 from snowflake.snowpark import Session
 
 from .._connection.rest_client import RestApiClient, RestApiRequestBuilder
@@ -154,6 +154,8 @@ class ChatSnowflake(
             # {'model': 'llama3.1-70b', 'usage': {'prompt_tokens': 10, 'completion_tokens': 5}}
     """
 
+    model_config = ConfigDict(populate_by_name=True)
+
     # Model configuration
     model: str = Field(default="llama3.1-70b")
     """Name of Snowflake Cortex model to use."""
@@ -177,7 +179,7 @@ class ChatSnowflake(
     database: Optional[str] = Field(default=None)
     """Snowflake database to use."""
 
-    schema: Optional[str] = Field(default=None)
+    snowflake_schema: Optional[str] = Field(default=None, alias="schema", description="Snowflake schema")
     """Snowflake schema to use."""
 
     # Authentication
@@ -261,7 +263,7 @@ class ChatSnowflake(
         self.top_p = top_p
         self.warehouse = warehouse
         self.database = database
-        self.schema = schema
+        self.snowflake_schema = schema
         self.account = account
         self.user = user
         self.password = password
