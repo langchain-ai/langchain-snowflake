@@ -202,8 +202,7 @@ class SnowflakeValidationUtils:
         try:
             if not all([account, user]):
                 raise ValueError(
-                    f"{auth_type} authentication requires environment variables: "
-                    "SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER"
+                    f"{auth_type} authentication requires environment variables: SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER"
                 )
 
             if additional_required:

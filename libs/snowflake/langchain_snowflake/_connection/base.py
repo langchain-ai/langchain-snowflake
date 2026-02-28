@@ -3,7 +3,7 @@
 import logging
 from typing import Any, Optional
 
-from pydantic import Field, SecretStr
+from pydantic import ConfigDict, Field, SecretStr
 from snowflake.snowpark import Session
 
 from .._error_handling import SnowflakeErrorHandler
@@ -24,6 +24,7 @@ class SnowflakeConnectionMixin:
     across the langchain-snowflake package.
     """
 
+    model_config = ConfigDict(populate_by_name=True)
     # Shared Pydantic field definitions
     session: Any = Field(default=None, exclude=True, description="Active Snowflake session")
     account: Optional[str] = Field(default=None, description="Snowflake account identifier")
@@ -33,8 +34,8 @@ class SnowflakeConnectionMixin:
     private_key_path: Optional[str] = Field(default=None, description="Path to private key file")
     private_key_passphrase: Optional[str] = Field(default=None, description="Private key passphrase")
     warehouse: Optional[str] = Field(default=None, description="Snowflake warehouse")
-    database: Optional[str] = Field(default=None, description="Snowflake database")
-    schema: Optional[str] = Field(default=None, description="Snowflake schema")
+    database: Optional[str] = Field(default=None, alias="database", description="Snowflake database")
+    snowflake_schema: Optional[str] = Field(default=None, alias="schema", description="Snowflake schema")
 
     # Timeout configuration - follows Snowflake parameter hierarchy
     request_timeout: int = Field(default=30, description="HTTP request timeout in seconds (default: 30)")
@@ -74,7 +75,7 @@ class SnowflakeConnectionMixin:
             private_key_passphrase=getattr(self, "private_key_passphrase", None),
             warehouse=self.warehouse,
             database=self.database,
-            schema=self.schema,
+            schema=self.snowflake_schema,
         )
 
         # Cache the session for reuse
@@ -96,7 +97,7 @@ class SnowflakeConnectionMixin:
             private_key_passphrase=getattr(self, "private_key_passphrase", None),
             warehouse=self.warehouse,
             database=self.database,
-            schema=self.schema,
+            schema=self.snowflake_schema,
         )
 
     def _get_effective_timeout(self) -> int:
