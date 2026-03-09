@@ -5,6 +5,7 @@ This module provides a centralized client for all REST API operations.
 
 import json
 import logging
+import os
 from typing import Any, Dict, Optional
 from urllib.parse import quote
 
@@ -303,9 +304,18 @@ class RestApiClient:
 
     @staticmethod
     def _get_base_url(session) -> str:
-        """Get base URL for Snowflake REST API."""
+        """Get base URL for Snowflake REST API.
+
+        In SPCS environments, SNOWFLAKE_HOST contains the correct hostname
+        for OAuth-authenticated REST API calls.
+        """
         try:
-            # Extract account info from session
+            # Check SNOWFLAKE_HOST first (required for SPCS OAuth)
+            snowflake_host = os.environ.get("SNOWFLAKE_HOST")
+            if snowflake_host:
+                return f"https://{snowflake_host}"
+
+            # Fall back to account-based URL for local development
             account_info = session.get_current_account()
 
             # Handle None case
