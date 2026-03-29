@@ -321,6 +321,9 @@ class RestApiClient:
             # Extract account name (remove region/cloud info if present)
             account_name = account_info.split(".")[0] if "." in account_info else account_info
 
+            # Snowflake TLS certificates use hyphens, not underscores, in hostnames.
+            account_name = account_name.replace("_", "-")
+
             # Build base URL following Snowflake REST API patterns
             return f"https://{account_name}.snowflakecomputing.com"
 
