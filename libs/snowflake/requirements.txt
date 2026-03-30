@@ -48,7 +48,7 @@ python-dateutil==2.9.0.post0 ; python_version >= "3.10" and python_version < "3.
 pytz==2025.2 ; python_version >= "3.10" and python_version < "3.12"
 pyyaml==6.0.2 ; python_version >= "3.10" and python_version < "3.12"
 requests-toolbelt==1.0.0 ; python_version >= "3.10" and python_version < "3.12"
-requests==2.33.0 ; python_version >= "3.10" and python_version < "3.12"
+requests==2.33.1 ; python_version >= "3.10" and python_version < "3.12"
 s3transfer==0.13.1 ; python_version >= "3.10" and python_version < "3.12"
 setuptools==80.9.0 ; python_version >= "3.10" and python_version < "3.12"
 six==1.17.0 ; python_version >= "3.10" and python_version < "3.12"
