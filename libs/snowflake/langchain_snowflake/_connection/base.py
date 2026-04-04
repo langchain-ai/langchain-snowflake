@@ -34,7 +34,7 @@ class SnowflakeConnectionMixin:
     private_key_passphrase: Optional[str] = Field(default=None, description="Private key passphrase")
     warehouse: Optional[str] = Field(default=None, description="Snowflake warehouse")
     database: Optional[str] = Field(default=None, description="Snowflake database")
-    schema: Optional[str] = Field(default=None, description="Snowflake schema")
+    sf_schema: Optional[str] = Field(default=None, alias="schema", description="Snowflake schema")
 
     # Timeout configuration - follows Snowflake parameter hierarchy
     request_timeout: int = Field(default=30, description="HTTP request timeout in seconds (default: 30)")
@@ -74,7 +74,7 @@ class SnowflakeConnectionMixin:
             private_key_passphrase=getattr(self, "private_key_passphrase", None),
             warehouse=self.warehouse,
             database=self.database,
-            schema=self.schema,
+            schema=self.sf_schema,
         )
 
         # Cache the session for reuse
@@ -96,7 +96,7 @@ class SnowflakeConnectionMixin:
             private_key_passphrase=getattr(self, "private_key_passphrase", None),
             warehouse=self.warehouse,
             database=self.database,
-            schema=self.schema,
+            schema=self.sf_schema,
         )
 
     def _get_effective_timeout(self) -> int:
