@@ -38,7 +38,7 @@ class FeedbackManagement:
         return RestApiRequestBuilder.feedback_request(
             session=session,
             database=self.database,
-            schema=self.schema,
+            schema=self.sf_schema,
             name=self.name,
             method=method,
             payload=payload,

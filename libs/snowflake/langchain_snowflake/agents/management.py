@@ -37,7 +37,7 @@ class AgentManagement:
         return RestApiRequestBuilder.agent_request(
             session=session,
             database=self.database,
-            schema=self.schema,
+            schema=self.sf_schema,
             name=target_name,
             method=method,
             payload=payload,
@@ -141,7 +141,7 @@ class AgentManagement:
             SnowflakeRestApiError: If agent listing fails
         """
         request_config = self._build_agent_request_config("GET", name="")
-        operation_name = f"list agents in {self.database}.{self.schema}"
+        operation_name = f"list agents in {self.database}.{self.sf_schema}"
 
         response_data = RestApiClient.make_sync_request(request_config, operation_name)
         return self._process_agent_list_response(response_data)
@@ -225,7 +225,7 @@ class AgentManagement:
             SnowflakeRestApiError: If agent listing fails
         """
         request_config = self._build_agent_request_config("GET", name="")
-        operation_name = f"list agents in {self.database}.{self.schema} (async)"
+        operation_name = f"list agents in {self.database}.{self.sf_schema} (async)"
 
         response_data = await RestApiClient.make_async_request(request_config, operation_name)
         return self._process_agent_list_response(response_data)

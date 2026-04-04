@@ -9,7 +9,7 @@ from langchain_core.callbacks import (
 )
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from ._connection import RestApiClient, RestApiRequestBuilder, SnowflakeConnectionMixin
 from ._error_handling import SnowflakeErrorHandler
@@ -158,10 +158,7 @@ class SnowflakeCortexSearchRetriever(BaseRetriever, SnowflakeConnectionMixin):
         description="If True, fall back to page_content when metadata field is empty",
     )
 
-    class Config:
-        """Configuration for this pydantic object."""
-
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
 
     def __init__(self, **kwargs: Any) -> None:
         """Initialize the retriever with proper session attribute."""
