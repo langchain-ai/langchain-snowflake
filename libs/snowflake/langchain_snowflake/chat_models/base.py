@@ -332,21 +332,10 @@ class ChatSnowflake(
         **kwargs: Any,
     ) -> ChatResult:
         """Generate a chat response using either REST API (for tools) or SQL function (for basic chat)."""
-        try:
-            # Route based on tool usage
-            if self._should_use_rest_api():
-                return self._generate_via_rest_api(messages, stop, run_manager, **kwargs)
-            else:
-                return self._generate_via_sql(messages, stop, run_manager, **kwargs)
-        except Exception as e:
-            input_tokens = self._estimate_tokens(messages)
-            return SnowflakeErrorHandler.create_chat_error_result(
-                error=e,
-                operation="generate response",
-                model=self.model,
-                input_tokens=input_tokens,
-                logger_instance=logger,
-            )
+        if self._should_use_rest_api():
+            return self._generate_via_rest_api(messages, stop, run_manager, **kwargs)
+        else:
+            return self._generate_via_sql(messages, stop, run_manager, **kwargs)
 
     def _generate_via_sql(
         self,
@@ -529,31 +518,20 @@ class ChatSnowflake(
     ) -> ChatResult:
         """Generate response using REST API /api/v2/cortex/inference:complete (for tool calling)."""
 
-        try:
-            # Get session info for authentication
-            self._get_session()
+        # Get session info for authentication
+        self._get_session()
 
-            # Build the REST API payload
-            payload = self._build_rest_api_payload(messages)
+        # Build the REST API payload
+        payload = self._build_rest_api_payload(messages)
 
-            # Use non-streaming for invoke() - cleaner JSON responses
-            payload["stream"] = False
+        # Use non-streaming for invoke() - cleaner JSON responses
+        payload["stream"] = False
 
-            # Make the REST API call using RestApiClient
-            response_data = self._make_rest_api_request(payload)
+        # Make the REST API call using RestApiClient
+        response_data = self._make_rest_api_request(payload)
 
-            # Parse the response and handle tool calls
-            return self._parse_rest_api_response(response_data, messages)
-
-        except Exception as e:
-            # Use centralized error handling with better context
-            input_tokens = self._estimate_tokens(messages)
-            return SnowflakeErrorHandler.create_chat_error_result(
-                error=e,
-                operation="generate response via REST API",
-                model=self.model,
-                input_tokens=input_tokens,
-            )
+        # Parse the response and handle tool calls
+        return self._parse_rest_api_response(response_data, messages)
 
     async def _generate_via_rest_api_async(
         self,
@@ -564,28 +542,17 @@ class ChatSnowflake(
     ) -> ChatResult:
         """Async generate response using REST API with native aiohttp."""
 
-        try:
-            # Build the REST API payload
-            payload = self._build_rest_api_payload(messages)
+        # Build the REST API payload
+        payload = self._build_rest_api_payload(messages)
 
-            # Use non-streaming for ainvoke() - cleaner JSON responses
-            payload["stream"] = False
+        # Use non-streaming for ainvoke() - cleaner JSON responses
+        payload["stream"] = False
 
-            # Make the async REST API call using RestApiClient
-            response_data = await self._make_rest_api_request_async(payload)
+        # Make the async REST API call using RestApiClient
+        response_data = await self._make_rest_api_request_async(payload)
 
-            # Parse the response and handle tool calls - USE ASYNC VERSION for async tool execution
-            return await self._parse_rest_api_response_async(response_data, messages)
-
-        except Exception as e:
-            # Use centralized error handling with better context
-            input_tokens = self._estimate_tokens(messages)
-            return SnowflakeErrorHandler.create_chat_error_result(
-                error=e,
-                operation="generate response via async REST API",
-                model=self.model,
-                input_tokens=input_tokens,
-            )
+        # Parse the response and handle tool calls - USE ASYNC VERSION for async tool execution
+        return await self._parse_rest_api_response_async(response_data, messages)
 
     async def _agenerate(
         self,
@@ -595,24 +562,13 @@ class ChatSnowflake(
         **kwargs: Any,
     ) -> ChatResult:
         """Async generate chat completion using native async patterns."""
-        try:
-            # Determine whether to use SQL or REST API based on tool requirements
-            if self._should_use_rest_api():
-                # Use native async REST API with aiohttp
-                return await self._generate_via_rest_api_async(messages, stop, run_manager, **kwargs)
-            else:
-                # Use native Snowflake async for SQL execution
-                return await self._generate_via_sql_async(messages, stop, run_manager, **kwargs)
-
-        except Exception as e:
-            # Use centralized error handling with better context
-            input_tokens = self._estimate_tokens(messages)
-            return SnowflakeErrorHandler.create_chat_error_result(
-                error=e,
-                operation="generate async response",
-                model=self.model,
-                input_tokens=input_tokens,
-            )
+        # Determine whether to use SQL or REST API based on tool requirements
+        if self._should_use_rest_api():
+            # Use native async REST API with aiohttp
+            return await self._generate_via_rest_api_async(messages, stop, run_manager, **kwargs)
+        else:
+            # Use native Snowflake async for SQL execution
+            return await self._generate_via_sql_async(messages, stop, run_manager, **kwargs)
 
     def get_num_tokens(self, text: str) -> int:
         """Get the number of tokens in the given text."""

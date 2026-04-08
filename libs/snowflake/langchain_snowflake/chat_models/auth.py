@@ -35,6 +35,11 @@ class SnowflakeAuth:
                 connection_params["password"] = str(self.password)
         if self.token:
             connection_params["token"] = self.token
+            connection_params["authenticator"] = "oauth"
+            from .._validation_utils import SnowflakeValidationUtils
+            env = SnowflakeValidationUtils.validate_optional_env_vars(["SNOWFLAKE_HOST"])
+            if env["SNOWFLAKE_HOST"]:
+                connection_params["host"] = env["SNOWFLAKE_HOST"]
         if self.private_key_path:
             connection_params["private_key_path"] = self.private_key_path
         if self.private_key_passphrase:

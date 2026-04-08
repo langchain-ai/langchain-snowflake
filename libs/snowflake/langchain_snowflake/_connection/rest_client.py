@@ -303,25 +303,33 @@ class RestApiClient:
 
     @staticmethod
     def _get_base_url(session) -> str:
-        """Get base URL for Snowflake REST API."""
+        """Get base URL for Snowflake REST API.
+
+        In SPCS environments the SNOWFLAKE_HOST env var contains the correct
+        hostname and takes precedence over the account derived from the session.
+        """
         try:
-            # Extract account info from session
+            # SPCS injects SNOWFLAKE_HOST; always prefer it over the session account.
+            from .._validation_utils import SnowflakeValidationUtils
+
+            env = SnowflakeValidationUtils.validate_optional_env_vars(["SNOWFLAKE_HOST"])
+            spcs_host = env["SNOWFLAKE_HOST"]
+            if spcs_host:
+                return f"https://{spcs_host}"
+
+            # Standard (non-SPCS) path: derive hostname from session account.
             account_info = session.get_current_account()
 
-            # Handle None case
             if not account_info:
                 SnowflakeErrorHandler.log_and_raise(
                     ValueError("Unable to retrieve account information from session"), "get base URL"
                 )
 
-            # Remove quotes if present (Snowflake returns quoted account names)
             if account_info.startswith('"') and account_info.endswith('"'):
                 account_info = account_info[1:-1]
 
-            # Extract account name (remove region/cloud info if present)
             account_name = account_info.split(".")[0] if "." in account_info else account_info
 
-            # Build base URL following Snowflake REST API patterns
             return f"https://{account_name}.snowflakecomputing.com"
 
         except Exception as e:

@@ -122,7 +122,7 @@ class TestToolMessageGrouping:
         assert tool_result["name"] == "get_weather"
 
     def test_tool_message_without_name_attribute(self, chat_snowflake):
-        """Test ToolMessage without name attribute."""
+        """Test ToolMessage without name attribute is resolved from preceding AIMessage tool_calls."""
         messages = [
             HumanMessage(content="Check weather"),
             AIMessage(content="I'll check", tool_calls=[{"id": "call_1", "name": "get_weather", "args": {}}]),
@@ -133,7 +133,8 @@ class TestToolMessageGrouping:
 
         user_message = payload["messages"][-1]
         tool_result = user_message["content_list"][0]["tool_results"]
-        assert tool_result["name"] == "unknown"
+        # Name should be resolved from the preceding AIMessage tool_calls by matching tool_call_id
+        assert tool_result["name"] == "get_weather"
 
     def test_disable_parallel_tool_use_parameter(self, chat_snowflake):
         """Test that disable_parallel_tool_use parameter is included in payload."""
@@ -216,12 +217,11 @@ class TestToolMessageGrouping:
         # Should have 3 messages: human, assistant, user
         assert len(payload["messages"]) == 3
 
-        # Assistant message should have both text and tool_use in content_list array
+        # Assistant message: text goes to top-level "content", content_list holds tool_use blocks only
         assistant_message = payload["messages"][1]
         assert assistant_message["role"] == "assistant"
+        assert assistant_message["content"] == "I'll check the weather for you"
         assert "content_list" in assistant_message
-        assert len(assistant_message["content_list"]) == 2  # Text + tool_use
-        assert assistant_message["content_list"][0]["type"] == "text"
-        assert assistant_message["content_list"][0]["text"] == "I'll check the weather for you"
-        assert assistant_message["content_list"][1]["type"] == "tool_use"
-        assert assistant_message["content_list"][1]["tool_use"]["name"] == "get_weather"
+        assert len(assistant_message["content_list"]) == 1  # tool_use only
+        assert assistant_message["content_list"][0]["type"] == "tool_use"
+        assert assistant_message["content_list"][0]["tool_use"]["name"] == "get_weather"

@@ -14,6 +14,11 @@ langchain/
 # Security files (NEVER commit these)
 env_setup.txt
 rsa_key.p8
+# Local test/scratch scripts
+_full_test_script.txt
+_full_test_script*.txt
+# AI agent and IDE rule files — local dev tooling only, not for the repo
+AGENTS.md
 *.pem
 *.key
 *.p8
@@ -124,6 +129,11 @@ setup_*.py
 # Documentation builds
 docs/_build/
 site/
+# Local working folders — not for the repo
+docs/issues/
+docs/poc-cust/
+# Demo source directories
+docs/build-multi-agentic-demo/
 
 # Benchmarks and performance data
 .benchmarks/

@@ -104,7 +104,7 @@ class SnowflakeCortexAgent(
     # Core agent configuration
     name: str = Field(description="Name of the Cortex Agent in Snowflake")
     database: str = Field(description="Database containing the agent")
-    schema: str = Field(description="Schema containing the agent")
+    sf_schema: str = Field(alias="schema", description="Schema containing the agent")
 
     # Thread management configuration
     auto_create_threads: bool = Field(
@@ -124,7 +124,7 @@ class SnowflakeCortexAgent(
 
         self.name = SnowflakeValidationUtils.validate_non_empty_string(kwargs.get("name"), "name")
         self.database = SnowflakeValidationUtils.validate_non_empty_string(kwargs.get("database"), "database")
-        self.schema = SnowflakeValidationUtils.validate_non_empty_string(kwargs.get("schema"), "schema")
+        self.sf_schema = SnowflakeValidationUtils.validate_non_empty_string(kwargs.get("schema"), "schema")
 
         # Set optional fields with defaults
         self.auto_create_threads = kwargs.get("auto_create_threads", True)
@@ -192,7 +192,7 @@ class SnowflakeCortexAgent(
         request_config = RestApiRequestBuilder.agent_request(
             session=session,
             database=self.database,
-            schema=self.schema,
+            schema=self.sf_schema,
             name=self.name,
             action="run",
             method="POST",

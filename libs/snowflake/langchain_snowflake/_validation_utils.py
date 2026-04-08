@@ -72,7 +72,9 @@ class SnowflakeValidationUtils:
             ValueError: If validation fails
         """
         try:
-            required_params = ["account", "user"]
+            # OAuth token auth (SPCS) does not require a user field
+            is_oauth = bool(connection_params.get("token"))
+            required_params = ["account"] if is_oauth else ["account", "user"]
 
             # Check for required parameters
             for param in required_params:
@@ -84,10 +86,11 @@ class SnowflakeValidationUtils:
             if not isinstance(account, str) or not account.strip():
                 raise ValueError("Account must be a non-empty string")
 
-            # Validate user
-            user = connection_params["user"]
-            if not isinstance(user, str) or not user.strip():
-                raise ValueError("User must be a non-empty string")
+            # Validate user only when required
+            if not is_oauth:
+                user = connection_params["user"]
+                if not isinstance(user, str) or not user.strip():
+                    raise ValueError("User must be a non-empty string")
 
             # Ensure we have at least one authentication method
             auth_methods = ["password", "private_key", "private_key_path", "token"]

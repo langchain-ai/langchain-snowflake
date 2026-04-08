@@ -24,7 +24,7 @@ class SnowflakeSessionManager:
         except Exception as e:
             # Log version detection failure but continue with fallback
             SnowflakeErrorHandler.log_error("detect package version", e)
-            version = "0.2.1"  # Fallback version
+            version = "0.2.2"  # Fallback version
             return version
 
     @staticmethod
@@ -238,7 +238,7 @@ class SnowflakeSessionManager:
     @staticmethod
     def build_connection_config(
         account: str,
-        user: str,
+        user: Optional[str] = None,
         password: Optional[str] = None,
         token: Optional[str] = None,
         private_key_path: Optional[str] = None,
@@ -270,17 +270,22 @@ class SnowflakeSessionManager:
         Raises:
             ValueError: If required parameters are missing
         """
-        # Build base configuration
-        config = {
-            "account": account,
-            "user": user,
-        }
+        # Build base configuration; OAuth token auth does not require a user field
+        config: Dict[str, Any] = {"account": account}
+        if user:
+            config["user"] = user
 
         # Add authentication method
         if password:
             config["password"] = password
         elif token:
             config["token"] = token
+            config["authenticator"] = "oauth"
+            from .._validation_utils import SnowflakeValidationUtils
+
+            env = SnowflakeValidationUtils.validate_optional_env_vars(["SNOWFLAKE_HOST"])
+            if env["SNOWFLAKE_HOST"]:
+                config["host"] = env["SNOWFLAKE_HOST"]
         elif private_key_path:
             config["private_key_path"] = private_key_path
             if private_key_passphrase:

@@ -62,7 +62,7 @@ class SnowflakeErrorHandler:
         """
         log = logger_instance or logger
         log.error(f"Error in {operation}: {error}")
-        raise
+        raise error
 
     @staticmethod
     def create_chat_error_result(

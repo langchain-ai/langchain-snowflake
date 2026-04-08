@@ -181,25 +181,44 @@ The goal is to provide the most helpful, accurate, and relevant information to t
 
         return result
 
-    def _process_tool_message_group(self, tool_messages: List[ToolMessage]) -> Dict[str, Any]:
+    def _process_tool_message_group(
+        self,
+        tool_messages: List[ToolMessage],
+        preceding_ai_message: Optional[AIMessage] = None,
+    ) -> Dict[str, Any]:
         """
         Process a group of ToolMessage objects into a single user message.
 
         Args:
             tool_messages: List of consecutive ToolMessage objects
+            preceding_ai_message: The AIMessage that triggered these tool calls,
+                used to look up tool names by tool_call_id.
 
         Returns:
             Dictionary representing a user message with grouped tool results
         """
-        tool_results = []
+        # Build a tool_call_id -> name lookup from the preceding AIMessage
+        id_to_name: Dict[str, str] = {}
+        if preceding_ai_message and hasattr(preceding_ai_message, "tool_calls"):
+            for tc in preceding_ai_message.tool_calls or []:
+                if isinstance(tc, dict):
+                    tc_id = tc.get("id", "")
+                    tc_name = tc.get("name", "")
+                else:
+                    tc_id = getattr(tc, "id", "") or ""
+                    tc_name = getattr(tc, "name", "") or ""
+                if tc_id:
+                    id_to_name[tc_id] = tc_name
 
+        tool_results = []
         for tool_msg in tool_messages:
+            name = id_to_name.get(tool_msg.tool_call_id or "") or getattr(tool_msg, "name", None) or "unknown"
             tool_results.append(
                 {
                     "type": "tool_results",
                     "tool_results": {
                         "tool_use_id": tool_msg.tool_call_id,
-                        "name": getattr(tool_msg, "name", None) or "unknown",
+                        "name": name,
                         "content": [{"type": "text", "text": str(tool_msg.content)}],
                     },
                 }
@@ -222,12 +241,9 @@ The goal is to provide the most helpful, accurate, and relevant information to t
 
         elif isinstance(message, AIMessage):
             if hasattr(message, "tool_calls") and message.tool_calls:
-                # Build content_list for Snowflake Complete API
+                # content_list must contain ONLY tool_use blocks per Snowflake API spec.
+                # Text content belongs in the top-level "content" field.
                 content_list: List[Dict[str, Any]] = []
-
-                # Add text content if present
-                if message.content:
-                    content_list.append({"type": "text", "text": message.content})
 
                 # Add tool_use blocks
                 for tool_call in message.tool_calls:
@@ -266,7 +282,7 @@ The goal is to provide the most helpful, accurate, and relevant information to t
                         }
                     )
 
-                return {"role": "assistant", "content_list": content_list}
+                return {"role": "assistant", "content": message.content or "", "content_list": content_list}
             else:
                 return {"role": "assistant", "content": message.content or ""}
 
@@ -303,14 +319,19 @@ The goal is to provide the most helpful, accurate, and relevant information to t
         # Group messages properly
         grouped_messages = self._group_consecutive_tool_messages(messages)
 
-        # Process each group or individual message
+        # Process each group or individual message, tracking the last AIMessage
+        # so tool name lookup works in _process_tool_message_group.
+        last_ai_message: Optional[AIMessage] = None
         for item in grouped_messages:
             if isinstance(item, list):  # Tool message group
-                user_message = self._process_tool_message_group(item)
+                user_message = self._process_tool_message_group(item, last_ai_message)
                 api_messages.append(user_message)
+                last_ai_message = None
             else:  # Single message
                 api_message = self._process_single_message(item)
                 api_messages.append(api_message)
+                if isinstance(item, AIMessage):
+                    last_ai_message = item
 
         # Build payload
         payload = {

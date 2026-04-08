@@ -366,16 +366,22 @@ class SnowflakeMetadataFactory:
         Returns:
             Dictionary containing usage metadata
         """
-        metadata = {}
+        metadata: Dict[str, Any] = {}
 
         if usage_data:
-            # Extract from usage_data if available
             if "prompt_tokens" in usage_data:
                 metadata["input_tokens"] = usage_data["prompt_tokens"]
             if "completion_tokens" in usage_data:
                 metadata["output_tokens"] = usage_data["completion_tokens"]
+            # Preserve total_tokens exactly as returned by the API; it already
+            # accounts for cached tokens which are not in prompt_tokens.
             if "total_tokens" in usage_data:
                 metadata["total_tokens"] = usage_data["total_tokens"]
+            # Preserve prompt-caching fields so callers can track cache hits.
+            if "cache_read_input_tokens" in usage_data:
+                metadata["cache_read_input_tokens"] = usage_data["cache_read_input_tokens"]
+            if "cache_write_input_tokens" in usage_data:
+                metadata["cache_write_input_tokens"] = usage_data["cache_write_input_tokens"]
 
         # Override with explicit values if provided
         if input_tokens is not None:
@@ -383,8 +389,8 @@ class SnowflakeMetadataFactory:
         if output_tokens is not None:
             metadata["output_tokens"] = output_tokens
 
-        # Calculate total if we have both input and output
-        if "input_tokens" in metadata and "output_tokens" in metadata:
+        # Only compute total as a fallback when the API did not supply it.
+        if "total_tokens" not in metadata and "input_tokens" in metadata and "output_tokens" in metadata:
             metadata["total_tokens"] = metadata["input_tokens"] + metadata["output_tokens"]
 
         return metadata

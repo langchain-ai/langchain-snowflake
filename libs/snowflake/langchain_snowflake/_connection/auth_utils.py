@@ -104,8 +104,15 @@ class SnowflakeAuthUtils:
             "User-Agent": "langchain-snowflake-chat",
         }
 
-        # Method 1: Personal Access Token (PAT) - highest priority
+        # Method 1: Explicit token provided.
+        # In SPCS, SNOWFLAKE_HOST is set and the token is an OAuth token that
+        # requires the "Snowflake Token" header format.  Outside SPCS the token
+        # is a PAT/JWT and uses "Bearer".
         if token:
+            from .._validation_utils import SnowflakeValidationUtils
+            env = SnowflakeValidationUtils.validate_optional_env_vars(["SNOWFLAKE_HOST"])
+            if env["SNOWFLAKE_HOST"]:
+                return {**base_headers, "Authorization": f'Snowflake Token="{token}"'}
             return {**base_headers, "Authorization": f"Bearer {token}"}
 
         # Method 2: Key-pair authentication (JWT)
