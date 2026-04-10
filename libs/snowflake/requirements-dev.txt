@@ -93,7 +93,7 @@ tzdata==2025.2 ; python_version >= "3.10" and python_version < "3.12" and platfo
 tzlocal==5.3.1 ; python_version >= "3.10" and python_version < "3.12"
 urllib3==2.6.3 ; python_version >= "3.10" and python_version < "3.12"
 uuid-utils==0.14.1 ; python_version >= "3.10" and python_version < "3.12"
-uv==0.11.3 ; python_version >= "3.10" and python_version < "3.12"
+uv==0.11.6 ; python_version >= "3.10" and python_version < "3.12"
 vcrpy==8.1.1 ; python_version >= "3.10" and python_version < "3.12"
 watchdog==6.0.0 ; python_version >= "3.10" and python_version < "3.12"
 wheel==0.46.3 ; python_version >= "3.10" and python_version < "3.12"
