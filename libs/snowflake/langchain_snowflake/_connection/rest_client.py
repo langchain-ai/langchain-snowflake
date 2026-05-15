@@ -76,7 +76,7 @@ class RestApiClient:
         }
 
         # Add payload if provided
-        if payload:
+        if payload is not None:
             request_config["json"] = payload
 
         # Add query parameters if provided
