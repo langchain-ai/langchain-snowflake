@@ -559,21 +559,19 @@ files = [
 
 [[package]]
 name = "codespell"
-version = "2.4.2"
+version = "2.4.3"
 description = "Fix common misspellings in text files"
 optional = false
 python-versions = ">=3.9"
 groups = ["codespell"]
 files = [
-    {file = "codespell-2.4.2-py3-none-any.whl", hash = "sha256:97e0c1060cf46bd1d5db89a936c98db8c2b804e1fdd4b5c645e82a1ec6b1f886"},
-    {file = "codespell-2.4.2.tar.gz", hash = "sha256:3c33be9ae34543807f088aeb4832dfad8cb2dae38da61cac0a7045dd376cfdf3"},
+    {file = "codespell-2.4.3-py3-none-any.whl", hash = "sha256:af2505b335e8573dbd2d384d1c4ef498f4006f4ba2d6fceca01e55b91f52628a"},
+    {file = "codespell-2.4.3.tar.gz", hash = "sha256:cbe085e331227b37bb86ef8bddd08dc768c704ee9a07ca869852c093fa2793e2"},
 ]
 
 [package.extras]
-dev = ["Pygments", "build", "chardet", "pre-commit", "pytest", "pytest-cov", "pytest-dependency", "ruff", "tomli", "twine"]
 hard-encoding-detection = ["chardet"]
 toml = ["tomli ; python_version < \"3.11\""]
-types = ["chardet (>=5.1.0)", "mypy", "pytest", "pytest-cov", "pytest-dependency"]
 
 [[package]]
 name = "colorama"
@@ -935,14 +933,14 @@ files = [
 
 [[package]]
 name = "langchain"
-version = "1.3.13"
+version = "1.3.14"
 description = "Building applications with LLMs through composability"
 optional = false
 python-versions = "<4.0.0,>=3.10.0"
 groups = ["main"]
 files = [
-    {file = "langchain-1.3.13-py3-none-any.whl", hash = "sha256:20a8fe4b1dea7db74356f7d2b5455c4970099b9f7f53c2122ea97f115c907fbd"},
-    {file = "langchain-1.3.13.tar.gz", hash = "sha256:bcf874680f31e9970f0db2264509df5bc2115d9680e9d651d537eb49bf1a7d8a"},
+    {file = "langchain-1.3.14-py3-none-any.whl", hash = "sha256:4d10dbe91005952cddd56d0dc77aa108964da6bae90ab20063653957e901f782"},
+    {file = "langchain-1.3.14.tar.gz", hash = "sha256:1b6696c72ba3bbbce54d745e0180742c9f6ece8bbc59ed5a46c3e20b9a435929"},
 ]
 
 [package.dependencies]
@@ -1015,42 +1013,42 @@ typing-extensions = ">=4.13.0,<5.0.0"
 
 [[package]]
 name = "langchain-tests"
-version = "1.1.5"
+version = "1.1.9"
 description = "Standard tests for LangChain implementations"
 optional = false
 python-versions = "<4.0.0,>=3.10.0"
 groups = ["test"]
 files = [
-    {file = "langchain_tests-1.1.5-py3-none-any.whl", hash = "sha256:535429fb31d17a6cf8d7f61a3f81013a650f090c0f57b4daf1a03be7771d61ff"},
-    {file = "langchain_tests-1.1.5.tar.gz", hash = "sha256:add75c24ea4aacb5f4efa02670fcceee5d5276848586f724e90135da6d3e070e"},
+    {file = "langchain_tests-1.1.9-py3-none-any.whl", hash = "sha256:f33e36e2015da437df2001ec6949b443de09dd37d021dea6160cf85912ccf05f"},
+    {file = "langchain_tests-1.1.9.tar.gz", hash = "sha256:a977a0c8f9a42ba2021a5ae59d468e4023f98a83818a3cb30e12c1dfab830203"},
 ]
 
 [package.dependencies]
 httpx = ">=0.28.1,<1.0.0"
-langchain-core = ">=1.2.7,<2.0.0"
+langchain-core = ">=1.4.0,<2.0.0"
 numpy = [
     {version = ">=1.26.2", markers = "python_version < \"3.13\""},
     {version = ">=2.1.0", markers = "python_version >= \"3.13\""},
 ]
-pytest = ">=7.0.0,<10.0.0"
-pytest-asyncio = ">=0.20.0,<2.0.0"
+pytest = ">=9.0.3,<10.0.0"
+pytest-asyncio = ">=1.3.0,<2.0.0"
 pytest-benchmark = "*"
 pytest-codspeed = "*"
 pytest-recording = "*"
 pytest-socket = ">=0.7.0,<1.0.0"
-syrupy = ">=4.0.0,<6.0.0"
+syrupy = ">=5.0.0,<6.0.0"
 vcrpy = ">=8.0.0,<9.0.0"
 
 [[package]]
 name = "langgraph"
-version = "1.2.9"
+version = "1.2.10"
 description = "Building stateful, multi-actor applications with LLMs"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "langgraph-1.2.9-py3-none-any.whl", hash = "sha256:c2d98ad94333937922ba04148641c1da2bfe45b5b8e55d7b6dcb0bb2df809e76"},
-    {file = "langgraph-1.2.9.tar.gz", hash = "sha256:385f87bc1802c35af7e0aa479278ecba8582d103515eb48256cb2ddcd42d0bd4"},
+    {file = "langgraph-1.2.10-py3-none-any.whl", hash = "sha256:52c48bd42fa31a1de0e1c0f0ebfe342e11ca2957b8b3563f83dbd60d8e30f921"},
+    {file = "langgraph-1.2.10.tar.gz", hash = "sha256:05a183a746ed570a06c7c1b879920163509a75df9e44e92dd2238218d677fd37"},
 ]
 
 [package.dependencies]
@@ -2633,19 +2631,19 @@ files = [
 
 [[package]]
 name = "snowflake-snowpark-python"
-version = "1.52.0"
+version = "1.54.0"
 description = "Snowflake Snowpark for Python"
 optional = false
 python-versions = "<3.15,>=3.10"
 groups = ["main"]
 files = [
-    {file = "snowflake_snowpark_python-1.52.0-py3-none-any.whl", hash = "sha256:2ade8caf623b3c6d5ec35e6974ef5de03ff1ad8b2d3ad7501b4ad2c35f94286a"},
-    {file = "snowflake_snowpark_python-1.52.0.tar.gz", hash = "sha256:c25ffe570f4b858c737312e451b0940044bebbaa2e6b3d2c3fc995e874874d9a"},
+    {file = "snowflake_snowpark_python-1.54.0-py3-none-any.whl", hash = "sha256:20dbe7a5715d1672e2d33a531798ddaa16f91081cd5d4b7cb7f35093188a7136"},
+    {file = "snowflake_snowpark_python-1.54.0.tar.gz", hash = "sha256:5ae52602dc528bf822a3ee8e1c8a679484afcb44dd12463211b0238148e0cf7b"},
 ]
 
 [package.dependencies]
 cloudpickle = ">=1.6.0,<2.1.0 || >2.1.0,<2.2.0 || >2.2.0,<=3.1.1"
-protobuf = ">=3.20,<6.34"
+protobuf = {version = ">=3.20,<6.34", markers = "python_version < \"3.14\""}
 python-dateutil = "*"
 pyyaml = "*"
 setuptools = ">=40.6.0"
@@ -2657,10 +2655,10 @@ wheel = "*"
 [package.extras]
 development = ["cachetools", "coverage", "decorator", "graphviz", "lxml", "matplotlib", "openpyxl", "pre-commit", "psutil", "pyarrow", "pytest (<8.0.0)", "pytest-assume", "pytest-cov", "pytest-timeout", "pytest-xdist", "snowflake.core (>=1.0.0,<2)", "sphinx (==5.0.2)", "tox", "wrapt"]
 localtest = ["pandas", "requests"]
-modin = ["ipywidgets", "modin (>=0.36.0,<0.38.0)", "pandas (<=2.4)", "snowflake-connector-python[pandas] (>=3.17.0,<5.0.0)", "tqdm"]
-modin-development = ["cachetools", "coverage", "decorator", "graphviz", "ipywidgets", "lxml", "matplotlib", "modin (>=0.36.0,<0.38.0)", "openpyxl", "pandas (<=2.4)", "plotly (<6.0.0)", "pre-commit", "psutil", "pyarrow", "pytest (<8.0.0)", "pytest-assume", "pytest-cov", "pytest-timeout", "pytest-xdist", "ray ; python_version < \"3.14\"", "s3fs", "scikit-learn", "scipy (<=1.16.3)", "snowflake-connector-python[pandas] (>=3.17.0,<5.0.0)", "snowflake-ml-python (>=1.8.0) ; python_version < \"3.12\"", "snowflake.core (>=1.0.0,<2)", "sphinx (==5.0.2)", "statsmodels", "tox", "tqdm", "wrapt"]
+modin = ["ipywidgets", "modin (>=0.36.0,<0.38.0)", "pandas (<3.0.0)", "pandas (<=2.4)", "snowflake-connector-python[pandas] (>=3.17.0,<5.0.0)", "tqdm"]
+modin-development = ["cachetools", "coverage", "decorator", "graphviz", "ipywidgets", "lxml", "matplotlib", "modin (>=0.36.0,<0.38.0)", "openpyxl", "pandas (<3.0.0)", "pandas (<=2.4)", "plotly (<6.0.0)", "pre-commit", "psutil", "pyarrow", "pytest (<8.0.0)", "pytest-assume", "pytest-cov", "pytest-timeout", "pytest-xdist", "ray ; python_version < \"3.14\"", "s3fs", "scikit-learn", "scipy (<=1.16.3)", "snowflake-connector-python[pandas] (>=3.17.0,<5.0.0)", "snowflake-ml-python (>=1.8.0) ; python_version < \"3.12\"", "snowflake.core (>=1.0.0,<2)", "sphinx (==5.0.2)", "statsmodels", "tox", "tqdm", "wrapt"]
 opentelemetry = ["opentelemetry-api (>=1.0.0,<2.0.0)", "opentelemetry-exporter-otlp (>=1.0.0,<2.0.0)", "opentelemetry-sdk (>=1.0.0,<2.0.0)"]
-pandas = ["snowflake-connector-python[pandas] (>=3.17.0,<5.0.0)"]
+pandas = ["pandas (<3.0.0)", "snowflake-connector-python[pandas] (>=3.17.0,<5.0.0)"]
 secure-local-storage = ["snowflake-connector-python[secure-local-storage] (>=3.17.0,<5.0.0)"]
 
 [[package]]
