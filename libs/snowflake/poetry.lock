@@ -2708,14 +2708,14 @@ files = [
 
 [[package]]
 name = "snowflake-snowpark-python"
-version = "1.54.0"
+version = "1.55.0"
 description = "Snowflake Snowpark for Python"
 optional = false
 python-versions = "<3.15,>=3.10"
 groups = ["main"]
 files = [
-    {file = "snowflake_snowpark_python-1.54.0-py3-none-any.whl", hash = "sha256:20dbe7a5715d1672e2d33a531798ddaa16f91081cd5d4b7cb7f35093188a7136"},
-    {file = "snowflake_snowpark_python-1.54.0.tar.gz", hash = "sha256:5ae52602dc528bf822a3ee8e1c8a679484afcb44dd12463211b0238148e0cf7b"},
+    {file = "snowflake_snowpark_python-1.55.0-py3-none-any.whl", hash = "sha256:dd5fd0c628d8227476706fbb50fa708f226fcc715ba7845e460780ba24c491c5"},
+    {file = "snowflake_snowpark_python-1.55.0.tar.gz", hash = "sha256:2accc4e50f44635b8c9d5ed52f26a4d9885d00f17fcc16eee532e8d9d274c627"},
 ]
 
 [package.dependencies]
@@ -2730,10 +2730,10 @@ tzlocal = "*"
 wheel = "*"
 
 [package.extras]
-development = ["cachetools", "coverage", "decorator", "graphviz", "lxml", "matplotlib", "openpyxl", "pre-commit", "psutil", "pyarrow", "pytest (<8.0.0)", "pytest-assume", "pytest-cov", "pytest-timeout", "pytest-xdist", "snowflake.core (>=1.0.0,<2)", "sphinx (==5.0.2)", "tox", "wrapt"]
+development = ["cachetools", "coverage", "decorator", "graphviz", "lxml", "matplotlib", "openpyxl", "polars (>=1.0)", "pre-commit", "psutil", "pyarrow", "pytest (<8.0.0)", "pytest-assume", "pytest-cov", "pytest-timeout", "pytest-xdist", "snowflake.core (>=1.0.0,<2)", "sphinx (==5.0.2)", "tox", "wrapt"]
 localtest = ["pandas", "requests"]
 modin = ["ipywidgets", "modin (>=0.36.0,<0.38.0)", "pandas (<3.0.0)", "pandas (<=2.4)", "snowflake-connector-python[pandas] (>=3.17.0,<5.0.0)", "tqdm"]
-modin-development = ["cachetools", "coverage", "decorator", "graphviz", "ipywidgets", "lxml", "matplotlib", "modin (>=0.36.0,<0.38.0)", "openpyxl", "pandas (<3.0.0)", "pandas (<=2.4)", "plotly (<6.0.0)", "pre-commit", "psutil", "pyarrow", "pytest (<8.0.0)", "pytest-assume", "pytest-cov", "pytest-timeout", "pytest-xdist", "ray ; python_version < \"3.14\"", "s3fs", "scikit-learn", "scipy (<=1.16.3)", "snowflake-connector-python[pandas] (>=3.17.0,<5.0.0)", "snowflake-ml-python (>=1.8.0) ; python_version < \"3.12\"", "snowflake.core (>=1.0.0,<2)", "sphinx (==5.0.2)", "statsmodels", "tox", "tqdm", "wrapt"]
+modin-development = ["cachetools", "coverage", "decorator", "graphviz", "ipywidgets", "lxml", "matplotlib", "modin (>=0.36.0,<0.38.0)", "openpyxl", "pandas (<3.0.0)", "pandas (<=2.4)", "plotly (<6.0.0)", "polars (>=1.0)", "pre-commit", "psutil", "pyarrow", "pytest (<8.0.0)", "pytest-assume", "pytest-cov", "pytest-timeout", "pytest-xdist", "ray ; python_version < \"3.14\"", "s3fs", "scikit-learn", "scipy (<=1.16.3)", "snowflake-connector-python[pandas] (>=3.17.0,<5.0.0)", "snowflake-ml-python (>=1.8.0) ; python_version < \"3.12\"", "snowflake.core (>=1.0.0,<2)", "sphinx (==5.0.2)", "statsmodels", "tox", "tqdm", "wrapt"]
 opentelemetry = ["opentelemetry-api (>=1.0.0,<2.0.0)", "opentelemetry-exporter-otlp (>=1.0.0,<2.0.0)", "opentelemetry-sdk (>=1.0.0,<2.0.0)"]
 pandas = ["pandas (<3.0.0)", "snowflake-connector-python[pandas] (>=3.17.0,<5.0.0)"]
 secure-local-storage = ["snowflake-connector-python[secure-local-storage] (>=3.17.0,<5.0.0)"]
