@@ -29,11 +29,24 @@ class SnowflakeStructuredOutput:
 
         Args:
             schema: Output schema (Pydantic model, TypedDict, or JSON schema)
-            method: Method to use ("function_calling")
+            method: Method to use. Only ``"function_calling"`` is supported;
+                Cortex Complete has no native JSON-schema mode, so any other
+                value raises ``ValueError`` rather than being ignored.
             include_raw: Whether to include raw response
             **kwargs: Additional keyword arguments
+
+        Raises:
+            ValueError: If ``method`` is anything other than
+                ``"function_calling"``.
         """
         from langchain_core.utils.pydantic import is_basemodel_subclass
+
+        if method != "function_calling":
+            raise ValueError(
+                f"Unsupported method: {method!r}. ChatSnowflake implements "
+                'structured output through prompting, so only "function_calling" '
+                "is available."
+            )
 
         # Import the base class from this module to avoid circular imports
         from .base import ChatSnowflake
