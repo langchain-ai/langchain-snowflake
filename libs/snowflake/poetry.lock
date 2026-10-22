@@ -3785,4 +3785,4 @@ key-pair = ["cryptography"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.14"
-content-hash = "2a473a93e8be3187e17660706f35b0d73184eebe1c85fcc7cafe44919c437f22"
+content-hash = "8b6910adb73a25937dc6cd9f21a3ea399b2271949fc93d13a72bbd47faf7ec61"
