@@ -19,7 +19,11 @@ langgraph = "^1.0.0"
 langgraph-checkpoint = ">=4.0.0,<5.0.0"
 langgraph-prebuilt = ">=1.0.8,<2.0.0"
 snowflake-snowpark-python = ">=1.20.0"
-snowflake-connector-python = ">=4.7.1"
+snowflake-connector-python = [
+    {version = ">=4.7.1", python = "<3.11"},
+    {version = ">=4.8.1", python = ">=3.11"},
+]
+filelock = {version = ">=4.2.1", python = ">=3.11"}
 snowflake = ">=0.8.0"
 pydantic = ">=2.7.0"
 aiohttp = ">=3.13.3"
