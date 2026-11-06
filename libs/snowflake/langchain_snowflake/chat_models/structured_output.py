@@ -60,6 +60,11 @@ class SnowflakeStructuredOutput:
                     "token",
                     "private_key_path",
                     "private_key_passphrase",
+                    "max_retries",
+                    "request_timeout",
+                    "verify_ssl",
+                    "disable_parallel_tool_use",
+                    "group_tool_messages",
                 ]
 
                 for param in known_params:
