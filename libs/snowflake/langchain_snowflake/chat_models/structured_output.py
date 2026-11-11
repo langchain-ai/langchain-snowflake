@@ -60,6 +60,13 @@ class SnowflakeStructuredOutput:
                     "token",
                     "private_key_path",
                     "private_key_passphrase",
+                    # Transport and tool-call behaviour: silently dropping
+                    # these reset the structured model to the class defaults.
+                    "max_retries",
+                    "request_timeout",
+                    "verify_ssl",
+                    "disable_parallel_tool_use",
+                    "group_tool_messages",
                 ]
 
                 for param in known_params:

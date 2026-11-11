@@ -89,6 +89,38 @@ class TestSnowflakeStructuredOutput:
         assert structured_llm is not None
         assert hasattr(structured_llm, "_target_schema")
 
+    def test_with_structured_output_preserves_configuration(self):
+        """The structured model must keep the instance's configuration.
+
+        `with_structured_output` rebuilds `ChatSnowflake` from a hard-coded
+        `known_params` list, so anything missing from it silently reverted to
+        the class default on the structured model.
+        """
+
+        class TestModel(BaseModel):
+            answer: str
+
+        llm = ChatSnowflake(
+            model="llama3.1-70b",
+            session=MockSession(),
+            max_retries=0,
+            request_timeout=17,
+            verify_ssl=False,
+            disable_parallel_tool_use=True,
+            group_tool_messages=False,
+        )
+
+        structured_llm = llm.with_structured_output(TestModel)
+
+        for field in (
+            "max_retries",
+            "request_timeout",
+            "verify_ssl",
+            "disable_parallel_tool_use",
+            "group_tool_messages",
+        ):
+            assert getattr(structured_llm, field) == getattr(llm, field), field
+
     def test_with_structured_output_json_schema(self):
         """Test structured output with JSON schema."""
         schema = {
